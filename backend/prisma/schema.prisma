@@ -1,0 +1,107 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+
+enum OrgType {
+  producer
+  client
+}
+
+enum Role {
+  producer_owner
+  producer_admin
+  producer_member
+  producer_viewer
+  creative
+  client
+  platform_admin
+}
+
+model Org {
+  id        String   @id @default(uuid())
+  type      OrgType
+  name      String
+  country   String?
+  currency  String?
+  createdAt DateTime @default(now())
+
+  users     User[]
+  projectsProducer Project[] @relation("ProducerOrg")
+  projectsClient   Project[] @relation("ClientOrg")
+  quotesProducer   Quote[]   @relation("QuoteProducerOrg")
+  quotesClient     Quote[]   @relation("QuoteClientOrg")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  role         Role
+  orgId        String?
+  org          Org?     @relation(fields: [orgId], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now())
+
+  creativeProfile CreativeProfile?
+}
+
+model CreativeProfile {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  displayName String
+  bio         String?
+  location    String?
+  skills      String[]
+  rateType    String?
+  rateAmount  Decimal?
+  currency    String?
+  createdAt   DateTime @default(now())
+}
+
+model Project {
+  id            String   @id @default(uuid())
+  producerOrgId String
+  clientOrgId   String?
+  title         String
+  brief         String?
+  status        String   @default("draft")
+  currency      String?
+  startDate     DateTime?
+  dueDate       DateTime?
+  createdById   String?
+  createdAt     DateTime @default(now())
+
+  producerOrg Org  @relation("ProducerOrg", fields: [producerOrgId], references: [id], onDelete: Cascade)
+  clientOrg   Org? @relation("ClientOrg", fields: [clientOrgId], references: [id], onDelete: SetNull)
+
+  quotes      Quote[]
+}
+
+model Quote {
+  id            String   @id @default(uuid())
+  projectId     String
+  producerOrgId String
+  clientOrgId   String
+  version       Int      @default(1)
+  status        String   @default("draft")
+  currency      String
+  subtotal      Decimal  @default(0)
+  tax           Decimal  @default(0)
+  total         Decimal  @default(0)
+  notes         String?
+  createdById   String?
+  createdAt     DateTime @default(now())
+
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  producerOrg Org     @relation("QuoteProducerOrg", fields: [producerOrgId], references: [id], onDelete: Cascade)
+  clientOrg   Org     @relation("QuoteClientOrg", fields: [clientOrgId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, version])
+}
+

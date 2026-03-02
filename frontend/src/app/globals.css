@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+/* tu theme encima */
+:root{
+  --bg: #f0f4f8;
+  --bg2:#e2e8f0;
+  --card: rgba(255,255,255,0.90);
+  --border: rgba(59,130,246,0.15);
+  --text:#1e293b;
+  --muted:#64748b;
+  --primary:#3b82f6;
+  --primaryDark:#2563eb;
+  --accent:#0ea5e9;
+  --shadow: 0 20px 60px rgba(59,130,246,0.10);
+  --radius: 16px;
+}
+
+html,body{height:100%}
+
+body{
+  color: var(--text);
+  background: linear-gradient(135deg, var(--bg) 0%, var(--bg2) 55%, #dbeafe 100%);
+}
+
+.mvp-card{
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.mvp-btn{ border-radius: 12px; font-weight: 700; }
+.mvp-btn-primary{ background: linear-gradient(135deg,#3b82f6,#0ea5e9); color:#fff; }
+/* @import "tailwindcss"; */

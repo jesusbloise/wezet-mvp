@@ -1,0 +1,24 @@
+# ===== node / next =====
+**/node_modules/
+**/.next/
+**/.turbo/
+**/dist/
+**/build/
+**/.cache/
+**/.vercel/
+**/out/
+
+# logs
+**/*.log
+
+# env
+**/.env
+**/.env.local
+**/.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ===== misc =====
+**/*.tsbuildinfo

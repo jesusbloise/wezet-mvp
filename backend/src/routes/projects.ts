@@ -93,23 +93,28 @@ router.get("/:id/creatives", requireAuth, requireProducer, async (req, res) => {
   if (pr.rowCount === 0) return res.status(404).json({ ok: false, error: "Project not found" });
 
   const r = await pool.query(
-    `
-    SELECT
-      pc.creative_user_id,
-      pc.status,
-      pc.created_at,
-      u.email,
-      cp.display_name
-    FROM project_creatives pc
-    JOIN users u ON u.id = pc.creative_user_id
-    LEFT JOIN creative_profiles cp ON cp.user_id = u.id
-    WHERE pc.project_id = $1
-    ORDER BY pc.created_at DESC
-    `,
-    [id]
-  );
+  `
+  SELECT
+    pc.creative_user_id,
+    pc.status,
+    pc.created_at,
+    u.email,
+    cp.display_name,
+    n.id AS negotiation_id
+  FROM project_creatives pc
+  JOIN users u ON u.id = pc.creative_user_id
+  LEFT JOIN creative_profiles cp ON cp.user_id = u.id
+  LEFT JOIN negotiations n
+    ON n.project_id = pc.project_id
+   AND n.creative_user_id = pc.creative_user_id
+   AND n.producer_org_id = $2
+  WHERE pc.project_id = $1
+  ORDER BY pc.created_at DESC
+  `,
+  [id, producerOrgId]
+);
 
-  return res.json({ ok: true, creatives: r.rows });
+return res.json({ ok: true, creatives: r.rows });
 });
 
 const inviteSchema = z.object({

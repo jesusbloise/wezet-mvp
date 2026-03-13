@@ -93,36 +93,59 @@ router.get("/:id/creatives", requireAuth, requireProducer, async (req, res) => {
   if (pr.rowCount === 0) return res.status(404).json({ ok: false, error: "Project not found" });
 
   const r = await pool.query(
-  `
-  SELECT
-    pc.creative_user_id,
-    pc.status,
-    pc.created_at,
-    u.email,
-    cp.display_name,
-    n.id AS negotiation_id
-  FROM project_creatives pc
-  JOIN users u ON u.id = pc.creative_user_id
-  LEFT JOIN creative_profiles cp ON cp.user_id = u.id
-  LEFT JOIN negotiations n
-    ON n.project_id = pc.project_id
-   AND n.creative_user_id = pc.creative_user_id
-   AND n.producer_org_id = $2
-  WHERE pc.project_id = $1
-  ORDER BY pc.created_at DESC
-  `,
-  [id, producerOrgId]
-);
+    `
+    -- A) creativos registrados (tu lógica actual)
+    SELECT
+      pc.creative_user_id::text AS creative_user_id,
+      pc.status,
+      pc.created_at,
+      u.email,
+      cp.display_name,
+      n.id AS negotiation_id
+    FROM project_creatives pc
+    JOIN users u ON u.id = pc.creative_user_id
+    LEFT JOIN creative_profiles cp ON cp.user_id = u.id
+    LEFT JOIN negotiations n
+      ON n.project_id = pc.project_id
+     AND n.creative_user_id = pc.creative_user_id
+     AND n.producer_org_id = $2
+    WHERE pc.project_id = $1
 
-return res.json({ ok: true, creatives: r.rows });
+    UNION ALL
+
+    -- B) participantes por contacto (no registrados / empresa)
+    SELECT
+      COALESCE(pp.contact_id, pp.id)::text AS creative_user_id,
+      pp.status,
+      pp.created_at,
+      pp.email,
+      pp.display_name,
+      NULL::uuid AS negotiation_id
+    FROM project_participants pp
+    WHERE pp.project_id = $1
+      AND pp.producer_org_id = $2
+
+    ORDER BY created_at DESC
+    `,
+    [id, producerOrgId]
+  );
+
+  return res.json({ ok: true, creatives: r.rows });
 });
+
+// ===== INVITE =====
 
 const inviteSchema = z.object({
   creativeEmail: z.string().email(),
+  participantType: z.enum(["creative", "company"]).optional(),
+  displayName: z.string().optional(),
+  phone: z.string().optional(),
+  specialty: z.string().optional(),
 });
 
 router.post("/:id/invite", requireAuth, requireProducer, async (req, res) => {
   const producerOrgId = req.user!.orgId;
+  const ownerUserId = req.user!.userId;
   const { id } = req.params;
 
   if (!uuidSchema.safeParse(id).success) {
@@ -132,7 +155,7 @@ router.post("/:id/invite", requireAuth, requireProducer, async (req, res) => {
   const parsed = inviteSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
 
-  const { creativeEmail } = parsed.data;
+  const { creativeEmail, participantType, displayName, phone, specialty } = parsed.data;
 
   // valida proyecto pertenece a esta productora
   const pr = await pool.query(
@@ -141,47 +164,105 @@ router.post("/:id/invite", requireAuth, requireProducer, async (req, res) => {
   );
   if (pr.rowCount === 0) return res.status(404).json({ ok: false, error: "Project not found" });
 
-  // el creativo debe existir y ser role=creative
-  const u = await pool.query(
-    `SELECT id, email, role FROM users WHERE lower(email) = lower($1)`,
-    [creativeEmail]
-  );
-  if (u.rowCount === 0) return res.status(404).json({ ok: false, error: "Creative user not found" });
+  const pType = participantType || "creative";
+  const cType = pType === "company" ? "empresa" : "creativo";
 
-  const creative = u.rows[0];
-  if (creative.role !== "creative") {
-    return res.status(400).json({ ok: false, error: "User is not a creative" });
-  }
+  const name = (displayName || "").trim() || creativeEmail.split("@")[0];
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    // Inserta invitación (si ya existe, no duplica)
-    await client.query(
-      `
-      INSERT INTO project_creatives (project_id, creative_user_id, invited_by, status)
-      VALUES ($1, $2, $3, 'invited')
-      ON CONFLICT (project_id, creative_user_id) DO NOTHING
-      `,
-      [id, creative.id, req.user!.userId]
+    // 1) UPSERT CONTACTO
+    const contactUpsert = await client.query(
+      `INSERT INTO contacts (owner_user_id, type, name, email, phone, specialty, company, source)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       ON CONFLICT (owner_user_id, lower(email))
+       DO UPDATE SET
+         type = EXCLUDED.type,
+         name = COALESCE(NULLIF(EXCLUDED.name,''), contacts.name),
+         phone = COALESCE(NULLIF(EXCLUDED.phone,''), contacts.phone),
+         specialty = COALESCE(NULLIF(EXCLUDED.specialty,''), contacts.specialty),
+         company = COALESCE(NULLIF(EXCLUDED.company,''), contacts.company),
+         updated_at = now()
+       RETURNING id, type, name, email`,
+      [
+        ownerUserId,
+        cType,
+        name,
+        creativeEmail,
+        phone?.trim() || null,
+        cType === "creativo" ? (specialty?.trim() || null) : null,
+        cType === "empresa" ? (specialty?.trim() || null) : null,
+        "talents",
+      ]
     );
 
-    // Crea negociación (si ya existe, no duplica)
-    await client.query(
-      `
-      INSERT INTO negotiations (project_id, producer_org_id, creative_user_id, status)
-      VALUES ($1, $2, $3, 'open')
-      ON CONFLICT (project_id, creative_user_id) DO NOTHING
-      `,
-      [id, producerOrgId, creative.id]
+    const contact = contactUpsert.rows[0];
+
+    // 2) si existe creative user real y es "creative"
+    const u = await client.query(
+      `SELECT id, email, role FROM users WHERE lower(email) = lower($1)`,
+      [creativeEmail]
     );
+
+    if (u.rowCount > 0 && u.rows[0].role === "creative" && pType === "creative") {
+      const creative = u.rows[0];
+
+      await client.query(
+        `
+        INSERT INTO project_creatives (project_id, creative_user_id, invited_by, status)
+        VALUES ($1, $2, $3, 'invited')
+        ON CONFLICT (project_id, creative_user_id) DO NOTHING
+        `,
+        [id, creative.id, ownerUserId]
+      );
+
+      await client.query(
+        `
+        INSERT INTO negotiations (project_id, producer_org_id, creative_user_id, status)
+        VALUES ($1, $2, $3, 'open')
+        ON CONFLICT (project_id, creative_user_id) DO NOTHING
+        `,
+        [id, producerOrgId, creative.id]
+      );
+    } else {
+      // 3) participante por contacto
+      await client.query(
+        `
+        INSERT INTO project_participants
+          (project_id, producer_org_id, contact_id, participant_type, email, display_name, phone, specialty, status)
+        VALUES
+          ($1,$2,$3,$4,$5,$6,$7,$8,'invited')
+        ON CONFLICT (project_id, lower(email))
+        DO UPDATE SET
+          display_name = COALESCE(NULLIF(EXCLUDED.display_name,''), project_participants.display_name),
+          phone = COALESCE(NULLIF(EXCLUDED.phone,''), project_participants.phone),
+          specialty = COALESCE(NULLIF(EXCLUDED.specialty,''), project_participants.specialty)
+        `,
+        [
+          id,
+          producerOrgId,
+          contact.id,
+          pType,
+          creativeEmail,
+          name,
+          phone?.trim() || null,
+          specialty?.trim() || null,
+        ]
+      );
+    }
 
     await client.query("COMMIT");
 
     return res.json({
       ok: true,
-      invited: { creative_user_id: creative.id, email: creative.email, status: "invited" },
+      invited: {
+        email: creativeEmail,
+        display_name: name,
+        participantType: pType,
+        status: "invited",
+      },
     });
   } catch (e: any) {
     await client.query("ROLLBACK");
@@ -192,3 +273,199 @@ router.post("/:id/invite", requireAuth, requireProducer, async (req, res) => {
 });
 
 export default router;
+
+
+// import { Router } from "express";
+// import { z } from "zod";
+// import pool from "../db/pool";
+// import { requireAuth } from "../middlewares/requireAuth";
+// import { requireProducer } from "../middlewares/requireProducer";
+
+
+// const router = Router();
+
+// // Crear proyecto
+// const createProjectSchema = z.object({
+//   title: z.string().min(2),
+//   brief: z.string().optional(),
+//   currency: z.string().optional(),
+//   start_date: z.string().optional(), // "YYYY-MM-DD"
+//   due_date: z.string().optional(),   // "YYYY-MM-DD"
+// });
+
+
+// router.post("/", requireAuth, requireProducer, async (req, res) => {
+//   const parsed = createProjectSchema.safeParse(req.body);
+//   if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+
+//   const { title, brief, currency, start_date, due_date } = parsed.data;
+
+//   const producerOrgId = req.user!.orgId;  // viene del JWT
+//   const createdBy = req.user!.userId;
+
+//   const r = await pool.query(
+//     `INSERT INTO projects (producer_org_id, title, brief, currency, start_date, due_date, created_by)
+//      VALUES ($1,$2,$3,$4,$5,$6,$7)
+//      RETURNING id, title, brief, status, currency, start_date, due_date, created_at`,
+//     [producerOrgId, title, brief ?? null, currency ?? null, start_date ?? null, due_date ?? null, createdBy]
+//   );
+
+//   res.json({ ok: true, project: r.rows[0] });
+// });
+
+// // Listar proyectos (solo de esa productora)
+// router.get("/", requireAuth, requireProducer, async (req, res) => {
+//   const producerOrgId = req.user!.orgId;
+
+//   const r = await pool.query(
+//     `SELECT id, title, status, currency, start_date, due_date, created_at
+//      FROM projects
+//      WHERE producer_org_id = $1
+//      ORDER BY created_at DESC`,
+//     [producerOrgId]
+//   );
+
+//   res.json({ ok: true, projects: r.rows });
+// });
+
+// // Detalle proyecto
+// const idSchema = z.string().uuid();
+
+// router.get("/:id", requireAuth, requireProducer, async (req, res) => {
+//   const producerOrgId = req.user!.orgId;
+//   const { id } = req.params;
+
+//   const valid = idSchema.safeParse(id);
+//   if (!valid.success) {
+//     return res.status(400).json({ ok: false, error: "Invalid project id" });
+//   }
+
+//   const r = await pool.query(
+//     `SELECT id, title, brief, status, currency, start_date, due_date, created_at
+//      FROM projects
+//      WHERE id = $1 AND producer_org_id = $2`,
+//     [id, producerOrgId]
+//   );
+
+//   if (r.rowCount === 0) return res.status(404).json({ ok: false, error: "Project not found" });
+
+//   res.json({ ok: true, project: r.rows[0] });
+// });
+
+// const uuidSchema = z.string().uuid();
+
+// router.get("/:id/creatives", requireAuth, requireProducer, async (req, res) => {
+//   const producerOrgId = req.user!.orgId;
+//   const { id } = req.params;
+
+//   if (!uuidSchema.safeParse(id).success) {
+//     return res.status(400).json({ ok: false, error: "Invalid project id" });
+//   }
+
+//   // valida que el proyecto sea de esta productora
+//   const pr = await pool.query(
+//     `SELECT id FROM projects WHERE id = $1 AND producer_org_id = $2`,
+//     [id, producerOrgId]
+//   );
+//   if (pr.rowCount === 0) return res.status(404).json({ ok: false, error: "Project not found" });
+
+//   const r = await pool.query(
+//   `
+//   SELECT
+//     pc.creative_user_id,
+//     pc.status,
+//     pc.created_at,
+//     u.email,
+//     cp.display_name,
+//     n.id AS negotiation_id
+//   FROM project_creatives pc
+//   JOIN users u ON u.id = pc.creative_user_id
+//   LEFT JOIN creative_profiles cp ON cp.user_id = u.id
+//   LEFT JOIN negotiations n
+//     ON n.project_id = pc.project_id
+//    AND n.creative_user_id = pc.creative_user_id
+//    AND n.producer_org_id = $2
+//   WHERE pc.project_id = $1
+//   ORDER BY pc.created_at DESC
+//   `,
+//   [id, producerOrgId]
+// );
+
+// return res.json({ ok: true, creatives: r.rows });
+// });
+
+// const inviteSchema = z.object({
+//   creativeEmail: z.string().email(),
+// });
+
+// router.post("/:id/invite", requireAuth, requireProducer, async (req, res) => {
+//   const producerOrgId = req.user!.orgId;
+//   const { id } = req.params;
+
+//   if (!uuidSchema.safeParse(id).success) {
+//     return res.status(400).json({ ok: false, error: "Invalid project id" });
+//   }
+
+//   const parsed = inviteSchema.safeParse(req.body);
+//   if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+
+//   const { creativeEmail } = parsed.data;
+
+//   // valida proyecto pertenece a esta productora
+//   const pr = await pool.query(
+//     `SELECT id FROM projects WHERE id = $1 AND producer_org_id = $2`,
+//     [id, producerOrgId]
+//   );
+//   if (pr.rowCount === 0) return res.status(404).json({ ok: false, error: "Project not found" });
+
+//   // el creativo debe existir y ser role=creative
+//   const u = await pool.query(
+//     `SELECT id, email, role FROM users WHERE lower(email) = lower($1)`,
+//     [creativeEmail]
+//   );
+//   if (u.rowCount === 0) return res.status(404).json({ ok: false, error: "Creative user not found" });
+
+//   const creative = u.rows[0];
+//   if (creative.role !== "creative") {
+//     return res.status(400).json({ ok: false, error: "User is not a creative" });
+//   }
+
+//   const client = await pool.connect();
+//   try {
+//     await client.query("BEGIN");
+
+//     // Inserta invitación (si ya existe, no duplica)
+//     await client.query(
+//       `
+//       INSERT INTO project_creatives (project_id, creative_user_id, invited_by, status)
+//       VALUES ($1, $2, $3, 'invited')
+//       ON CONFLICT (project_id, creative_user_id) DO NOTHING
+//       `,
+//       [id, creative.id, req.user!.userId]
+//     );
+
+//     // Crea negociación (si ya existe, no duplica)
+//     await client.query(
+//       `
+//       INSERT INTO negotiations (project_id, producer_org_id, creative_user_id, status)
+//       VALUES ($1, $2, $3, 'open')
+//       ON CONFLICT (project_id, creative_user_id) DO NOTHING
+//       `,
+//       [id, producerOrgId, creative.id]
+//     );
+
+//     await client.query("COMMIT");
+
+//     return res.json({
+//       ok: true,
+//       invited: { creative_user_id: creative.id, email: creative.email, status: "invited" },
+//     });
+//   } catch (e: any) {
+//     await client.query("ROLLBACK");
+//     return res.status(500).json({ ok: false, error: e?.message || String(e) });
+//   } finally {
+//     client.release();
+//   }
+// });
+
+// export default router;

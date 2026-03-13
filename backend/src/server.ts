@@ -11,6 +11,14 @@ import negotiationDetailRoutes from "./routes/negotiationDetail";
 import quotesRoutes from "./routes/quotes";
 import publicQuotesRoutes from "./routes/publicQuotes";
 import dashboardRoutes from "./routes/dashboard";
+import contactsRoutes from "./routes/contacts";
+import meRoutes from "./routes/me";
+import teamRoutes from "./routes/team";
+
+
+
+// ✅ FIX: requireAuth NO es default export
+import { requireAuth } from "./middlewares/requireAuth";
 
 const app = express();
 
@@ -28,11 +36,8 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: (origin, cb) => {
-      // requests tipo Postman/Thunder a veces vienen sin origin
       if (!origin) return cb(null, true);
-
       if (allowedOrigins.includes(origin)) return cb(null, true);
-
       return cb(new Error(`CORS blocked: ${origin}`));
     },
     credentials: true,
@@ -54,16 +59,22 @@ app.get("/health", async (_req, res) => {
   }
 });
 
-// Rutas Auth
+// Rutas
 app.use("/auth", authRoutes);
 app.use("/projects", projectsRoutes);
 app.use("/negotiations", negotiationsRoutes);
 app.use("/negotiations", negotiationDetailRoutes);
-app.use("/", quotesRoutes);          // /projects/:id/quotes, /quotes/:id...
-app.use("/public", publicQuotesRoutes); // /public/quote/:publicId
+app.use("/", quotesRoutes);
+app.use("/public", publicQuotesRoutes);
 app.use("/api/dashboard", dashboardRoutes);
+app.use("/me", meRoutes);
+app.use("/team", teamRoutes);
+
+// ✅ Contacts (protegido)
+app.use("/contacts", requireAuth, contactsRoutes);
 
 const port = Number(process.env.PORT) || 4000;
 app.listen(port, () => {
   console.log(`API running on http://localhost:${port}`);
 });
+

@@ -136,7 +136,7 @@ function sourceLabel(source?: string) {
 export default function TalentsPanel({
   projectId,
   title = "Participantes del proyecto",
-  description = "Agrega creativos o empresas para colaborar",
+  description = "Agrega usuarios o empresas para colaborar",
   buttonLabel = "+ Agregar",
   onCountChange,
 }: {
@@ -873,10 +873,11 @@ export default function TalentsPanel({
     </>
   );
 }
+
 // "use client";
 
 // import Link from "next/link";
-// import { useEffect, useState } from "react";
+// import { useEffect, useMemo, useState } from "react";
 // import { api } from "@/lib/api";
 
 // type CreativeRow = {
@@ -886,6 +887,19 @@ export default function TalentsPanel({
 //   email: string;
 //   display_name: string | null;
 //   negotiation_id: string | null;
+// };
+
+// type ContactRow = {
+//   id: string;
+//   type: "creativo" | "empresa";
+//   name: string;
+//   email: string;
+//   phone?: string | null;
+//   specialty?: string | null;
+//   company?: string | null;
+//   source?: "manual" | "talents" | "quotes";
+//   created_at?: string | null;
+//   updated_at?: string | null;
 // };
 
 // function UserIcon() {
@@ -918,14 +932,64 @@ export default function TalentsPanel({
 //   );
 // }
 
+// function SearchIcon() {
+//   return (
+//     <svg
+//       viewBox="0 0 24 24"
+//       className="h-4 w-4"
+//       fill="none"
+//       stroke="currentColor"
+//       strokeWidth="2.2"
+//     >
+//       <path d="M21 21l-4.3-4.3" />
+//       <path d="M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Z" />
+//     </svg>
+//   );
+// }
+
+// function PlusIcon() {
+//   return (
+//     <svg
+//       viewBox="0 0 24 24"
+//       className="h-4 w-4"
+//       fill="none"
+//       stroke="currentColor"
+//       strokeWidth="2.2"
+//     >
+//       <path d="M12 5v14" />
+//       <path d="M5 12h14" />
+//     </svg>
+//   );
+// }
+
+// function CheckIcon() {
+//   return (
+//     <svg
+//       viewBox="0 0 24 24"
+//       className="h-4 w-4"
+//       fill="none"
+//       stroke="currentColor"
+//       strokeWidth="2.2"
+//     >
+//       <path d="M5 13l4 4L19 7" />
+//     </svg>
+//   );
+// }
+
 // function badgeForCreativeStatus(status?: string) {
 //   const s = String(status || "").toLowerCase();
 //   const base =
 //     "inline-flex items-center rounded-xl px-3 py-1 text-[11px] font-bold border";
 
-//   if (s === "invited") return `${base} bg-amber-500/12 text-amber-300 border-amber-500/20`;
-//   if (s === "accepted") return `${base} bg-emerald-500/12 text-emerald-300 border-emerald-500/20`;
-//   if (s === "rejected") return `${base} bg-rose-500/12 text-rose-300 border-rose-500/20`;
+//   if (s === "invited") {
+//     return `${base} bg-amber-500/12 text-amber-300 border-amber-500/20`;
+//   }
+//   if (s === "accepted") {
+//     return `${base} bg-emerald-500/12 text-emerald-300 border-emerald-500/20`;
+//   }
+//   if (s === "rejected") {
+//     return `${base} bg-rose-500/12 text-rose-300 border-rose-500/20`;
+//   }
 
 //   return `${base} bg-white/[0.05] text-slate-300 border-white/10`;
 // }
@@ -938,10 +1002,17 @@ export default function TalentsPanel({
 //   return status || "—";
 // }
 
+// function sourceLabel(source?: string) {
+//   if (source === "quotes") return "Cotizaciones";
+//   if (source === "talents") return "Talentos";
+//   if (source === "manual") return "Manual";
+//   return "Contacto";
+// }
+
 // export default function TalentsPanel({
 //   projectId,
 //   title = "Participantes del proyecto",
-//   description = "Agrega creativos para colaborar",
+//   description = "Agrega creativos o empresas para colaborar",
 //   buttonLabel = "+ Agregar",
 //   onCountChange,
 // }: {
@@ -954,6 +1025,15 @@ export default function TalentsPanel({
 //   const [items, setItems] = useState<CreativeRow[]>([]);
 //   const [loading, setLoading] = useState(true);
 //   const [err, setErr] = useState<string | null>(null);
+
+//   const [contacts, setContacts] = useState<ContactRow[]>([]);
+//   const [contactsLoading, setContactsLoading] = useState(true);
+//   const [contactsErr, setContactsErr] = useState<string | null>(null);
+
+//   const [search, setSearch] = useState("");
+//   const [tabFilter, setTabFilter] = useState<"all" | "creativo" | "empresa">("all");
+
+//   const [addingContactId, setAddingContactId] = useState<string | null>(null);
 
 //   const [flowOpen, setFlowOpen] = useState(false);
 //   const [flowStep, setFlowStep] = useState<"choose" | "form">("choose");
@@ -972,6 +1052,10 @@ export default function TalentsPanel({
 //     setFlowStep("choose");
 //     setParticipantType(null);
 //     setFormErr(null);
+//     setName("");
+//     setEmail("");
+//     setPhone("");
+//     setSpecialty("");
 //   };
 
 //   const closeFlow = () => {
@@ -985,7 +1069,7 @@ export default function TalentsPanel({
 //     setSpecialty("");
 //   };
 
-//   const load = async () => {
+//   const loadProjectTalents = async () => {
 //     setLoading(true);
 //     setErr(null);
 //     try {
@@ -1002,10 +1086,87 @@ export default function TalentsPanel({
 //     }
 //   };
 
+//   const loadContacts = async () => {
+//     setContactsLoading(true);
+//     setContactsErr(null);
+//     try {
+//       const r = await api<{ ok: true; contacts: ContactRow[] }>("/contacts");
+//       setContacts(Array.isArray(r.contacts) ? r.contacts : []);
+//     } catch (e: any) {
+//       setContacts([]);
+//       setContactsErr(String(e?.message || e));
+//     } finally {
+//       setContactsLoading(false);
+//     }
+//   };
+
+//   const reloadAll = async () => {
+//     await Promise.all([loadProjectTalents(), loadContacts()]);
+//   };
+
 //   useEffect(() => {
 //     if (!projectId) return;
-//     load();
+//     reloadAll();
 //   }, [projectId]);
+
+//   const assignedEmailSet = useMemo(() => {
+//     const set = new Set<string>();
+//     for (const item of items) {
+//       if (item.email) set.add(String(item.email).trim().toLowerCase());
+//     }
+//     return set;
+//   }, [items]);
+
+//   const filteredContacts = useMemo(() => {
+//     let base = contacts;
+
+//     if (tabFilter !== "all") {
+//       base = base.filter((c) => c.type === tabFilter);
+//     }
+
+//     const q = search.trim().toLowerCase();
+//     if (!q) return base;
+
+//     return base.filter((c) => {
+//       const name = String(c.name || "").toLowerCase();
+//       const email = String(c.email || "").toLowerCase();
+//       const phone = String(c.phone || "").toLowerCase();
+//       const specialty = String(c.specialty || "").toLowerCase();
+//       const company = String(c.company || "").toLowerCase();
+//       const source = String(c.source || "").toLowerCase();
+
+//       return (
+//         name.includes(q) ||
+//         email.includes(q) ||
+//         phone.includes(q) ||
+//         specialty.includes(q) ||
+//         company.includes(q) ||
+//         source.includes(q)
+//       );
+//     });
+//   }, [contacts, search, tabFilter]);
+
+//   const assignExistingContact = async (contact: ContactRow) => {
+//     setAddingContactId(contact.id);
+//     try {
+//       await api(`/projects/${projectId}/invite`, {
+//         method: "POST",
+//         body: JSON.stringify({
+//           creativeEmail: contact.email,
+//           participantType: contact.type === "creativo" ? "creative" : "company",
+//           displayName: contact.name,
+//           phone: contact.phone || null,
+//           specialty: contact.specialty || contact.company || null,
+//         }),
+//       });
+
+//       await loadProjectTalents();
+//     } catch (e: any) {
+//       setErr(String(e?.message || e));
+//     } finally {
+//       setAddingContactId(null);
+//     }
+//   };
 
 //   const submit = async () => {
 //     const n = name.trim();
@@ -1026,6 +1187,7 @@ export default function TalentsPanel({
 
 //     setSaving(true);
 //     setFormErr(null);
+
 //     try {
 //       await api(`/projects/${projectId}/invite`, {
 //         method: "POST",
@@ -1039,7 +1201,7 @@ export default function TalentsPanel({
 //       });
 
 //       closeFlow();
-//       await load();
+//       await reloadAll();
 //     } catch (e: any) {
 //       setFormErr(String(e?.message || e));
 //     } finally {
@@ -1048,6 +1210,7 @@ export default function TalentsPanel({
 //   };
 
 //   const isCreative = participantType === "creative";
+
 //   const modalTitle = participantType
 //     ? participantType === "creative"
 //       ? "Agregar Creativo"
@@ -1079,80 +1242,278 @@ export default function TalentsPanel({
 //           </button>
 //         </div>
 
-//         <div className="px-5 py-6 sm:px-6">
+//         <div className="space-y-6 px-5 py-6 sm:px-6">
 //           {err ? (
-//             <div className="mb-4 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+//             <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
 //               {err}
 //             </div>
 //           ) : null}
 
-//           {loading ? (
-//             <div className="text-sm text-slate-400">Cargando...</div>
-//           ) : items.length === 0 ? (
-//             <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-10 text-center">
-//               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-white/8 bg-white/[0.03] text-[#f2c94c]">
-//                 <span className="text-xl">👥</span>
-//               </div>
-//               <div className="mt-4 text-sm font-semibold text-slate-300">
-//                 No hay participantes aún
-//               </div>
-//               <div className="mt-1 text-xs text-slate-500">
-//                 Agrega creativos o empresas para colaborar
+//           <section className="rounded-3xl border border-white/8 bg-[#0a1425]">
+//             <div className="flex items-center justify-between gap-3 border-b border-white/8 px-5 py-4">
+//               <div>
+//                 <div className="text-sm font-extrabold text-white">
+//                   Participantes ya asignados al proyecto
+//                 </div>
+//                 <div className="text-xs text-slate-500">
+//                   Aquí ves quienes ya están dentro de este proyecto
+//                 </div>
 //               </div>
 
-//               <button
-//                 type="button"
-//                 onClick={openFlow}
-//                 className="mt-4 inline-flex items-center justify-center rounded-2xl px-5 py-2.5 text-sm font-bold text-[#0b0f17]"
-//                 style={{ background: "linear-gradient(135deg,#f2c94c,#d4a72c)" }}
-//               >
-//                 + Agregar primer participante
-//               </button>
+//               <div className="rounded-xl border border-white/8 bg-white/[0.04] px-3 py-1.5 text-xs font-bold text-slate-300">
+//                 {items.length} asignado{items.length === 1 ? "" : "s"}
+//               </div>
 //             </div>
-//           ) : (
-//             <div className="grid gap-3">
-//               {items.map((c) => (
-//                 <div
-//                   key={c.creative_user_id}
-//                   className="flex flex-col gap-4 rounded-2xl border border-white/8 bg-white/[0.03] p-5 sm:flex-row sm:items-center sm:justify-between"
-//                 >
-//                   <div className="flex min-w-0 items-start gap-3">
-//                     <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/[0.05] text-[#f2c94c]">
-//                       <UserIcon />
-//                     </div>
 
-//                     <div className="min-w-0">
-//                       <div className="truncate text-sm font-extrabold text-white">
-//                         {c.display_name || c.email}
-//                       </div>
-//                       <div className="mt-1 truncate text-xs text-slate-500">{c.email}</div>
-//                       <div className="mt-2 text-xs text-slate-600">
-//                         Invitado:{" "}
-//                         {c.created_at ? new Date(c.created_at).toLocaleDateString() : "—"}
-//                       </div>
-//                     </div>
+//             <div className="px-5 py-5">
+//               {loading ? (
+//                 <div className="text-sm text-slate-400">Cargando participantes...</div>
+//               ) : items.length === 0 ? (
+//                 <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-10 text-center">
+//                   <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-white/8 bg-white/[0.03] text-[#f2c94c]">
+//                     <span className="text-xl">👥</span>
 //                   </div>
 
-//                   <div className="flex items-center justify-between gap-3 sm:justify-end">
-//                     <span className={badgeForCreativeStatus(c.status)}>
-//                       {labelForCreativeStatus(c.status)}
-//                     </span>
+//                   <div className="mt-4 text-sm font-semibold text-slate-300">
+//                     No hay participantes aún
+//                   </div>
 
-//                     {c.negotiation_id ? (
-//                       <Link
-//                         href={`/producer/negotiations/${c.negotiation_id}`}
-//                         className="rounded-xl border border-white/8 bg-white/[0.04] px-3 py-2 text-xs font-bold text-slate-200 transition hover:bg-white/[0.08]"
-//                       >
-//                         Ver negociación
-//                       </Link>
-//                     ) : (
-//                       <span className="text-xs text-slate-600">Sin negociación</span>
-//                     )}
+//                   <div className="mt-1 text-xs text-slate-500">
+//                     Puedes asignar uno desde tus contactos o agregar uno nuevo
+//                   </div>
+
+//                   <button
+//                     type="button"
+//                     onClick={openFlow}
+//                     className="mt-4 inline-flex items-center justify-center rounded-2xl px-5 py-2.5 text-sm font-bold text-[#0b0f17]"
+//                     style={{ background: "linear-gradient(135deg,#f2c94c,#d4a72c)" }}
+//                   >
+//                     + Agregar primer participante
+//                   </button>
+//                 </div>
+//               ) : (
+//                 <div className="grid gap-3">
+//                   {items.map((c) => (
+//                     <div
+//                       key={c.creative_user_id}
+//                       className="flex flex-col gap-4 rounded-2xl border border-white/8 bg-white/[0.03] p-5 sm:flex-row sm:items-center sm:justify-between"
+//                     >
+//                       <div className="flex min-w-0 items-start gap-3">
+//                         <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/[0.05] text-[#f2c94c]">
+//                           <UserIcon />
+//                         </div>
+
+//                         <div className="min-w-0">
+//                           <div className="truncate text-sm font-extrabold text-white">
+//                             {c.display_name || c.email}
+//                           </div>
+//                           <div className="mt-1 truncate text-xs text-slate-500">{c.email}</div>
+//                           <div className="mt-2 text-xs text-slate-600">
+//                             Invitado:{" "}
+//                             {c.created_at
+//                               ? new Date(c.created_at).toLocaleDateString()
+//                               : "—"}
+//                           </div>
+//                         </div>
+//                       </div>
+
+//                       <div className="flex items-center justify-between gap-3 sm:justify-end">
+//                         <span className={badgeForCreativeStatus(c.status)}>
+//                           {labelForCreativeStatus(c.status)}
+//                         </span>
+
+//                         {c.negotiation_id ? (
+//                           <Link
+//                             href={`/producer/negotiations/${c.negotiation_id}`}
+//                             className="rounded-xl border border-white/8 bg-white/[0.04] px-3 py-2 text-xs font-bold text-slate-200 transition hover:bg-white/[0.08]"
+//                           >
+//                             Ver negociación
+//                           </Link>
+//                         ) : (
+//                           <span className="text-xs text-slate-600">Sin negociación</span>
+//                         )}
+//                       </div>
+//                     </div>
+//                   ))}
+//                 </div>
+//               )}
+//             </div>
+//           </section>
+
+//           <section className="rounded-3xl border border-white/8 bg-[#0a1425]">
+//             <div className="border-b border-white/8 px-5 py-4">
+//               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+//                 <div>
+//                   <div className="text-sm font-extrabold text-white">
+//                     Contactos disponibles para asignar
+//                   </div>
+//                   <div className="text-xs text-slate-500">
+//                     Tus contactos creativos y empresas aparecen aquí para agregarlos
+//                     rápidamente al proyecto
 //                   </div>
 //                 </div>
-//               ))}
+
+//                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+//                   <div className="inline-flex rounded-2xl border border-white/8 bg-white/[0.03] p-1">
+//                     <button
+//                       type="button"
+//                       onClick={() => setTabFilter("all")}
+//                       className={`rounded-xl px-3 py-2 text-xs font-bold transition ${
+//                         tabFilter === "all"
+//                           ? "bg-[#f2c94c] text-[#0b0f17]"
+//                           : "text-slate-300 hover:bg-white/[0.05]"
+//                       }`}
+//                     >
+//                       Todos
+//                     </button>
+//                     <button
+//                       type="button"
+//                       onClick={() => setTabFilter("creativo")}
+//                       className={`rounded-xl px-3 py-2 text-xs font-bold transition ${
+//                         tabFilter === "creativo"
+//                           ? "bg-[#f2c94c] text-[#0b0f17]"
+//                           : "text-slate-300 hover:bg-white/[0.05]"
+//                       }`}
+//                     >
+//                       Creativos
+//                     </button>
+//                     <button
+//                       type="button"
+//                       onClick={() => setTabFilter("empresa")}
+//                       className={`rounded-xl px-3 py-2 text-xs font-bold transition ${
+//                         tabFilter === "empresa"
+//                           ? "bg-[#f2c94c] text-[#0b0f17]"
+//                           : "text-slate-300 hover:bg-white/[0.05]"
+//                       }`}
+//                     >
+//                       Empresas
+//                     </button>
+//                   </div>
+
+//                   <div className="relative min-w-[240px]">
+//                     <div className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">
+//                       <SearchIcon />
+//                     </div>
+//                     <input
+//                       value={search}
+//                       onChange={(e) => setSearch(e.target.value)}
+//                       placeholder="Buscar contactos..."
+//                       className="w-full rounded-2xl border border-white/8 bg-white/[0.04] py-2.5 pl-11 pr-4 text-sm text-white outline-none focus:bg-white/[0.06] focus:ring-2 focus:ring-[#f2c94c]/20"
+//                     />
+//                   </div>
+//                 </div>
+//               </div>
 //             </div>
-//           )}
+
+//             <div className="px-5 py-5">
+//               {contactsLoading ? (
+//                 <div className="text-sm text-slate-400">Cargando contactos...</div>
+//               ) : contactsErr ? (
+//                 <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+//                   {contactsErr}
+//                 </div>
+//               ) : filteredContacts.length === 0 ? (
+//                 <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-10 text-center">
+//                   <div className="text-sm font-semibold text-slate-300">
+//                     No hay contactos disponibles
+//                   </div>
+//                   <div className="mt-1 text-xs text-slate-500">
+//                     Agrega uno nuevo con el botón superior
+//                   </div>
+//                 </div>
+//               ) : (
+//                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+//                   {filteredContacts.map((contact) => {
+//                     const assigned = assignedEmailSet.has(
+//                       String(contact.email || "").trim().toLowerCase()
+//                     );
+//                     const isBusy = addingContactId === contact.id;
+
+//                     return (
+//                       <div
+//                         key={contact.id}
+//                         className="rounded-2xl border border-white/8 bg-white/[0.03] p-4"
+//                       >
+//                         <div className="flex items-start justify-between gap-3">
+//                           <div className="flex min-w-0 items-start gap-3">
+//                             <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/[0.05] text-[#f2c94c]">
+//                               <UserIcon />
+//                             </div>
+
+//                             <div className="min-w-0">
+//                               <div className="truncate text-sm font-extrabold text-white">
+//                                 {contact.name || contact.email}
+//                               </div>
+//                               <div className="mt-1 truncate text-xs text-slate-500">
+//                                 {contact.email}
+//                               </div>
+//                             </div>
+//                           </div>
+
+//                           <span
+//                             className={`inline-flex rounded-xl border px-2.5 py-1 text-[11px] font-bold ${
+//                               contact.type === "creativo"
+//                                 ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
+//                                 : "border-sky-500/20 bg-sky-500/10 text-sky-300"
+//                             }`}
+//                           >
+//                             {contact.type === "creativo" ? "Creativo" : "Empresa"}
+//                           </span>
+//                         </div>
+
+//                         <div className="mt-4 space-y-2 text-xs text-slate-400">
+//                           {contact.phone ? (
+//                             <div>
+//                               <span className="text-slate-500">Teléfono:</span> {contact.phone}
+//                             </div>
+//                           ) : null}
+
+//                           {contact.specialty ? (
+//                             <div>
+//                               <span className="text-slate-500">
+//                                 {contact.type === "creativo" ? "Especialidad:" : "Rubro:"}
+//                               </span>{" "}
+//                               {contact.specialty}
+//                             </div>
+//                           ) : null}
+
+//                           {contact.company ? (
+//                             <div>
+//                               <span className="text-slate-500">Empresa:</span> {contact.company}
+//                             </div>
+//                           ) : null}
+
+//                           <div>
+//                             <span className="text-slate-500">Origen:</span>{" "}
+//                             {sourceLabel(contact.source)}
+//                           </div>
+//                         </div>
+
+//                         <div className="mt-4">
+//                           {assigned ? (
+//                             <div className="inline-flex items-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-300">
+//                               <CheckIcon />
+//                               Ya agregado al proyecto
+//                             </div>
+//                           ) : (
+//                             <button
+//                               type="button"
+//                               onClick={() => assignExistingContact(contact)}
+//                               disabled={isBusy}
+//                               className="inline-flex items-center gap-2 rounded-2xl border border-[#f2c94c]/20 bg-[#f2c94c]/10 px-4 py-2 text-xs font-bold text-[#f2c94c] transition hover:bg-[#f2c94c]/15 disabled:opacity-60"
+//                             >
+//                               <PlusIcon />
+//                               {isBusy ? "Agregando..." : "Agregar al proyecto"}
+//                             </button>
+//                           )}
+//                         </div>
+//                       </div>
+//                     );
+//                   })}
+//                 </div>
+//               )}
+//             </div>
+//           </section>
 //         </div>
 //       </div>
 
@@ -1164,6 +1525,7 @@ export default function TalentsPanel({
 //             aria-label="Cerrar"
 //             onClick={closeFlow}
 //           />
+
 //           <div className="absolute inset-0 flex items-center justify-center p-4">
 //             {flowStep === "choose" ? (
 //               <div className="w-full max-w-[640px] overflow-hidden rounded-3xl border border-white/10 bg-[#0d1320] shadow-2xl">
@@ -1175,11 +1537,11 @@ export default function TalentsPanel({
 //                     <span className="text-2xl">📝</span>
 //                   </div>
 
-//                   <div className="text-xl font-black text-white">Nuevo Acuerdo</div>
+//                   <div className="text-xl font-black text-white">Nuevo participante</div>
 //                   <div className="mt-1 text-sm text-slate-500">Proyecto: {projectId}</div>
 
 //                   <div className="mt-5 text-sm text-slate-400">
-//                     ¿Con quién deseas crear el acuerdo?
+//                     ¿Qué tipo de participante deseas agregar?
 //                   </div>
 
 //                   <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -1295,7 +1657,7 @@ export default function TalentsPanel({
 //                       <input
 //                         value={name}
 //                         onChange={(e) => setName(e.target.value)}
-//                         placeholder="Buscar en contactos o escribir nuevo..."
+//                         placeholder="Nombre completo o razón social"
 //                         className="mt-2 w-full rounded-2xl border border-white/8 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none focus:bg-white/[0.06] focus:ring-2 focus:ring-[#f2c94c]/20"
 //                       />
 //                     </div>
@@ -1311,7 +1673,8 @@ export default function TalentsPanel({
 //                         className="mt-2 w-full rounded-2xl border border-white/8 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none focus:bg-white/[0.06] focus:ring-2 focus:ring-[#f2c94c]/20"
 //                       />
 //                       <div className="mt-2 text-xs text-slate-500">
-//                         ✓ El acuerdo será enviado a este correo
+//                         Si no existe en la plataforma, se guardará como contacto y podrás
+//                         enviarle invitación para que se registre.
 //                       </div>
 //                     </div>
 
@@ -1343,12 +1706,12 @@ export default function TalentsPanel({
 
 //                     <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
 //                       <div className="text-xs font-extrabold text-emerald-300">
-//                         ✨ Al agregar este {isCreative ? "creativo" : "empresa"}:
+//                         Al agregar este {isCreative ? "creativo" : "empresa"}:
 //                       </div>
 //                       <ul className="mt-2 space-y-1 text-xs text-emerald-200/80">
-//                         <li>Quedará asociado a este proyecto</li>
-//                         <li>Se guardará en tu lista de contactos</li>
-//                         <li>Podrás enviarle acuerdos por correo</li>
+//                         <li>Se asociará a este proyecto</li>
+//                         <li>Quedará guardado en tu lista de contactos</li>
+//                         <li>Si luego implementas email, podrá recibir invitación de registro</li>
 //                       </ul>
 //                     </div>
 
@@ -1359,7 +1722,7 @@ export default function TalentsPanel({
 //                         disabled={saving}
 //                         className="rounded-2xl bg-white/[0.06] px-6 py-3 text-sm font-bold text-slate-200 hover:bg-white/[0.1]"
 //                       >
-//                         Cancelar
+//                         Volver
 //                       </button>
 
 //                       <button
@@ -1386,4 +1749,3 @@ export default function TalentsPanel({
 //     </>
 //   );
 // }
-

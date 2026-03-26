@@ -4,9 +4,28 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 
-/* ===================== helpers ===================== */
 function isUuid(v: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+}
+
+function fileToBase64(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== "string") {
+        reject(new Error("No se pudo leer el archivo."));
+        return;
+      }
+
+      const base64 = result.includes(",") ? result.split(",")[1] : result;
+      resolve(base64);
+    };
+
+    reader.onerror = () => reject(new Error("No se pudo leer el archivo."));
+    reader.readAsDataURL(file);
+  });
 }
 
 function XIcon() {
@@ -17,6 +36,7 @@ function XIcon() {
     </svg>
   );
 }
+
 function MoneyIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.2">
@@ -25,11 +45,20 @@ function MoneyIcon() {
     </svg>
   );
 }
-function SearchIcon() {
+
+function PaperclipIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.2">
-      <path d="M21 21l-4.3-4.3" />
-      <path d="M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Z" />
+      <path d="M21.44 11.05l-8.49 8.49a6 6 0 0 1-8.49-8.49l9.2-9.19a4 4 0 1 1 5.66 5.65l-9.19 9.2a2 2 0 1 1-2.83-2.83l8.49-8.48" />
+    </svg>
+  );
+}
+
+function FileIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.2">
+      <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7Z" />
+      <path d="M14 2v5h5" />
     </svg>
   );
 }
@@ -53,27 +82,13 @@ function addDaysISO(days: number) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-/* ===================== types ===================== */
-type ServiceCategory =
-  | "all"
-  | "design"
-  | "digital"
-  | "audiovisual"
-  | "content"
-  | "marketing"
-  | "audio"
-  | "events"
-  | "consulting";
-
-type Service = {
-  id: string;
-  cat: ServiceCategory;
-  title: string;
-  desc: string;
-  price: number;
-  unit: string;
-  emoji: string;
-};
+function formatFileSize(bytes: number) {
+  if (!bytes && bytes !== 0) return "—";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
 
 type CartItem = {
   id: string;
@@ -92,32 +107,22 @@ type QuoteCreatePayload = {
   valid_until?: string;
   notes?: string;
   terms?: string;
+  attachment_name?: string;
+  attachment_url?: string;
+  attachment_mime_type?: string;
 };
 
-const CATEGORIES: { id: ServiceCategory; label: string; emoji: string }[] = [
-  { id: "all", label: "Todos", emoji: "📦" },
-  { id: "design", label: "Diseño", emoji: "🎨" },
-  { id: "digital", label: "Digital", emoji: "💻" },
-  { id: "audiovisual", label: "Audiovisual", emoji: "🎬" },
-  { id: "content", label: "Contenido", emoji: "✍️" },
-  { id: "marketing", label: "Marketing", emoji: "📣" },
-  { id: "audio", label: "Audio", emoji: "🎧" },
-  { id: "events", label: "Eventos", emoji: "🎪" },
-  { id: "consulting", label: "Consultoría", emoji: "💼" },
-];
-
-const SERVICES: Service[] = [
-  { id: "logo", cat: "design", title: "Diseño de Logo", desc: "Incluye 3 propuestas y 2 revisiones", price: 500, unit: "/proyecto", emoji: "🎨" },
-  { id: "brandbook", cat: "design", title: "Manual de Marca", desc: "Guía completa de identidad visual", price: 1500, unit: "/proyecto", emoji: "📘" },
-  { id: "rrss", cat: "marketing", title: "Kit Redes Sociales", desc: "10 templates editables", price: 300, unit: "/paquete", emoji: "📱" },
-  { id: "flyer", cat: "design", title: "Flyer / Afíche", desc: "Diseño digital o impreso", price: 100, unit: "/pieza", emoji: "🧾" },
-  { id: "web", cat: "digital", title: "Landing Page", desc: "Diseño + implementación básica", price: 900, unit: "/proyecto", emoji: "💻" },
-  { id: "video", cat: "audiovisual", title: "Edición de Video", desc: "Edición + música + subtítulos básicos", price: 650, unit: "/video", emoji: "🎬" },
-  { id: "photo", cat: "audiovisual", title: "Sesión Fotográfica", desc: "20 fotos editadas", price: 400, unit: "/sesión", emoji: "📸" },
-  { id: "copy", cat: "content", title: "Copywriting", desc: "Texto para campaña / anuncios", price: 180, unit: "/entrega", emoji: "✍️" },
-];
+type UploadedAttachmentResponse = {
+  ok: true;
+  file: {
+    file_name: string;
+    mime_type: string;
+    url: string;
+  };
+};
 
 type TaxPreset = { id: string; label: string; ratePct: number };
+
 const TAX_PRESETS: TaxPreset[] = [
   { id: "cl", label: "Chile (IVA 19%)", ratePct: 19 },
   { id: "mx", label: "México (IVA 16%)", ratePct: 16 },
@@ -125,31 +130,21 @@ const TAX_PRESETS: TaxPreset[] = [
   { id: "none", label: "Exento / Sin impuesto", ratePct: 0 },
 ];
 
-/* ===================== styles ===================== */
 const darkInput =
   "w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:bg-white/[0.07] focus:ring-2 focus:ring-[#f2c94c]/10";
 
-const darkCard = "rounded-3xl border border-white/10 bg-[#0d1320]";
-const darkSoft = "rounded-2xl border border-white/10 bg-white/[0.04]";
 const yellowBtn =
   "rounded-2xl px-6 py-3 text-sm font-black text-[#0b0f17] transition hover:opacity-95 disabled:opacity-60";
 
-/* ===================== page ===================== */
 export default function CreateQuoteMvpModalPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const projectId = params?.id || "";
   const validId = useMemo(() => isUuid(projectId), [projectId]);
 
-  const [cat, setCat] = useState<ServiceCategory>("all");
-  const [q, setQ] = useState("");
-
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [customName, setCustomName] = useState("");
-  const [customPrice, setCustomPrice] = useState("");
-  const [customQty, setCustomQty] = useState("1");
 
-  const [clientName, setClientName] = useState("jesus");
+  const [clientName, setClientName] = useState("");
   const [clientEmail, setClientEmail] = useState("");
   const [currency, setCurrency] = useState("USD");
 
@@ -162,6 +157,9 @@ export default function CreateQuoteMvpModalPage() {
   const [discountPct, setDiscountPct] = useState("0");
   const [notes, setNotes] = useState("");
   const [terms, setTerms] = useState("");
+
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
 
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -190,15 +188,6 @@ export default function CreateQuoteMvpModalPage() {
     setValidUntil(addDaysISO(d || 0));
   }, [validDays]);
 
-  const filteredServices = useMemo(() => {
-    const text = q.trim().toLowerCase();
-    return SERVICES.filter((s) => {
-      const catOk = cat === "all" ? true : s.cat === cat;
-      const textOk = !text ? true : (s.title + " " + s.desc).toLowerCase().includes(text);
-      return catOk && textOk;
-    });
-  }, [cat, q]);
-
   const subtotal = useMemo(() => {
     return cart.reduce((sum, it) => sum + it.qty * it.unit_price, 0);
   }, [cart]);
@@ -222,42 +211,72 @@ export default function CreateQuoteMvpModalPage() {
     return Math.max(0, subtotal - discountAmount) + taxAmount;
   }, [subtotal, discountAmount, taxAmount]);
 
-  const addServiceToCart = (s: Service) => {
-    setCart((prev) => {
-      const idx = prev.findIndex((p) => p.id === s.id);
-      if (idx >= 0) {
-        const copy = [...prev];
-        copy[idx] = { ...copy[idx], qty: copy[idx].qty + 1 };
-        return copy;
-      }
-      return [...prev, { id: s.id, title: s.title, description: s.desc, qty: 1, unit_price: s.price }];
-    });
+  const addEmptyService = () => {
+    const id = `custom-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    setCart((prev) => [
+      ...prev,
+      {
+        id,
+        title: "",
+        description: "",
+        qty: 1,
+        unit_price: 0,
+      },
+    ]);
   };
 
   const removeFromCart = (id: string) => {
     setCart((prev) => prev.filter((p) => p.id !== id));
   };
 
-  const setQty = (id: string, qty: number) => {
-    const q2 = clamp(qty, 1, 9999);
-    setCart((prev) => prev.map((p) => (p.id === id ? { ...p, qty: q2 } : p)));
+  const updateItem = (id: string, patch: Partial<CartItem>) => {
+    setCart((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
+        return { ...item, ...patch };
+      })
+    );
   };
 
-  const addCustom = () => {
-    const name = customName.trim();
-    const price = Number(customPrice || 0);
-    const qty = Number(customQty || 1);
+  const setQty = (id: string, qty: number) => {
+    const q2 = clamp(Number.isFinite(qty) ? qty : 1, 1, 9999);
+    updateItem(id, { qty: q2 });
+  };
 
-    if (!name || !Number.isFinite(price) || price <= 0) return;
+  const setUnitPrice = (id: string, price: number) => {
+    const p2 = Math.max(0, Number.isFinite(price) ? price : 0);
+    updateItem(id, { unit_price: p2 });
+  };
 
-    const id = `custom-${Date.now()}`;
-    setCart((prev) => [
-      ...prev,
-      { id, title: name, description: "", qty: clamp(qty, 1, 9999), unit_price: price },
-    ]);
-    setCustomName("");
-    setCustomPrice("");
-    setCustomQty("1");
+  const setTitle = (id: string, title: string) => {
+    updateItem(id, { title });
+  };
+
+  const setDescription = (id: string, description: string) => {
+    updateItem(id, { description });
+  };
+
+  const handleAttachmentChange = (file: File | null) => {
+    setAttachmentError(null);
+
+    if (!file) {
+      setAttachmentFile(null);
+      return;
+    }
+
+    const maxSize = 15 * 1024 * 1024;
+    if (file.size > maxSize) {
+      setAttachmentFile(null);
+      setAttachmentError("El archivo supera el límite de 15 MB.");
+      return;
+    }
+
+    setAttachmentFile(file);
+  };
+
+  const removeAttachment = () => {
+    setAttachmentFile(null);
+    setAttachmentError(null);
   };
 
   const saveQuote = async () => {
@@ -266,14 +285,54 @@ export default function CreateQuoteMvpModalPage() {
     setErr(null);
 
     try {
-      if (!cart.length) {
-        setErr("Agrega al menos un servicio antes de guardar.");
+      const cleanedItems = cart
+        .map((it) => ({
+          ...it,
+          title: it.title.trim(),
+          description: (it.description || "").trim(),
+          qty: clamp(Number(it.qty || 1), 1, 9999),
+          unit_price: Math.max(0, Number(it.unit_price || 0)),
+        }))
+        .filter((it) => it.title && it.unit_price >= 0);
+
+      if (!cleanedItems.length) {
+        setErr("Agrega al menos un servicio personalizado válido antes de guardar.");
+        setSaving(false);
+        return;
+      }
+
+      const invalid = cleanedItems.some((it) => !it.title || it.qty <= 0);
+      if (invalid) {
+        setErr("Revisa los servicios. Todos deben tener nombre y cantidad válida.");
         setSaving(false);
         return;
       }
 
       const discountAbs = Math.round(discountAmount * 100) / 100;
       const taxRateDecimal = taxRatePct / 100;
+
+      let uploadedAttachment:
+        | {
+            file_name: string;
+            mime_type: string;
+            url: string;
+          }
+        | null = null;
+
+      if (attachmentFile) {
+        const contentBase64 = await fileToBase64(attachmentFile);
+
+        const uploadRes = await api<UploadedAttachmentResponse>("/quotes/upload-attachment", {
+          method: "POST",
+          body: JSON.stringify({
+            file_name: attachmentFile.name,
+            mime_type: attachmentFile.type || "application/octet-stream",
+            content_base64: contentBase64,
+          }),
+        });
+
+        uploadedAttachment = uploadRes.file;
+      }
 
       const payload: QuoteCreatePayload = {
         client_name: clientName.trim() || undefined,
@@ -284,17 +343,23 @@ export default function CreateQuoteMvpModalPage() {
         valid_until: validUntil || undefined,
         notes: notes.trim() || undefined,
         terms: terms.trim() || undefined,
+        attachment_name: uploadedAttachment?.file_name || undefined,
+        attachment_mime_type: uploadedAttachment?.mime_type || undefined,
+        attachment_url: uploadedAttachment?.url || undefined,
       };
 
-      const created = await api<{ ok: true; quote: { id: string } }>(`/projects/${projectId}/quotes`, {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
+      const created = await api<{ ok: true; quote: { id: string } }>(
+        `/projects/${projectId}/quotes`,
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        }
+      );
 
       const quoteId = created.quote.id;
 
       let sort = 0;
-      for (const it of cart) {
+      for (const it of cleanedItems) {
         await api(`/quotes/${quoteId}/items`, {
           method: "POST",
           body: JSON.stringify({
@@ -348,103 +413,123 @@ export default function CreateQuoteMvpModalPage() {
             <div className="grid grid-cols-1 lg:grid-cols-2">
               <div className="border-b border-white/10 p-6 lg:border-b-0 lg:border-r">
                 <div className="flex items-center justify-between gap-3">
-                  <div className="text-sm font-extrabold text-white">Agregar Servicios</div>
-                  <div className="relative hidden w-[220px] sm:block">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">
-                      <SearchIcon />
-                    </span>
-                    <input
-                      value={q}
-                      onChange={(e) => setQ(e.target.value)}
-                      placeholder="Buscar..."
-                      className="w-full rounded-2xl border border-white/10 bg-white/[0.05] pl-9 pr-3 py-2.5 text-sm text-white outline-none focus:bg-white/[0.07] focus:ring-2 focus:ring-[#f2c94c]/10"
-                    />
-                  </div>
-                </div>
-
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {CATEGORIES.map((c) => {
-                    const active = c.id === cat;
-                    return (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() => setCat(c.id)}
-                        className={[
-                          "inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-bold transition",
-                          active
-                            ? "border-[#f2c94c]/20 bg-[#f2c94c] text-[#0b0f17]"
-                            : "border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/[0.08]",
-                        ].join(" ")}
-                      >
-                        <span>{c.emoji}</span>
-                        <span>{c.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="mt-4 rounded-3xl border border-white/10 bg-[#0d1320] p-4 max-h-[420px] overflow-auto">
-                  {filteredServices.map((s) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => addServiceToCart(s)}
-                      className="mb-3 w-full rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-left hover:bg-white/[0.07]"
-                      title="Click para agregar"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="inline-flex items-center gap-2 text-sm font-extrabold text-white">
-                            <span>{s.emoji}</span>
-                            <span>{s.title}</span>
-                          </div>
-                          <div className="mt-1 text-xs text-slate-500">{s.desc}</div>
-                        </div>
-                        <div className="shrink-0 text-right">
-                          <div className="text-sm font-black text-[#f2c94c]">
-                            {sym}
-                            {Math.round(s.price).toLocaleString()}
-                          </div>
-                          <div className="text-[10px] text-slate-500">{s.unit}</div>
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-
-                  <div className="mt-3 rounded-2xl border border-dashed border-white/10 bg-white/[0.03] p-4">
-                    <div className="text-xs font-bold text-slate-400">+ Servicio personalizado</div>
-
-                    <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-5">
-                      <input
-                        value={customName}
-                        onChange={(e) => setCustomName(e.target.value)}
-                        className="sm:col-span-2 rounded-xl border border-white/10 bg-white/[0.05] px-3 py-2 text-sm text-white outline-none focus:bg-white/[0.07] focus:ring-2 focus:ring-[#f2c94c]/10"
-                        placeholder="Nombre del servicio"
-                      />
-                      <input
-                        value={customPrice}
-                        onChange={(e) => setCustomPrice(e.target.value)}
-                        className="rounded-xl border border-white/10 bg-white/[0.05] px-3 py-2 text-sm text-white outline-none focus:bg-white/[0.07] focus:ring-2 focus:ring-[#f2c94c]/10"
-                        placeholder="Precio"
-                        inputMode="decimal"
-                      />
-                      <input
-                        value={customQty}
-                        onChange={(e) => setCustomQty(e.target.value)}
-                        className="rounded-xl border border-white/10 bg-white/[0.05] px-3 py-2 text-sm text-white outline-none focus:bg-white/[0.07] focus:ring-2 focus:ring-[#f2c94c]/10"
-                        placeholder="Qty"
-                        inputMode="numeric"
-                      />
-                      <button
-                        type="button"
-                        onClick={addCustom}
-                        className="rounded-xl bg-white/[0.08] px-3 py-2 text-sm font-bold text-slate-200 hover:bg-white/[0.12]"
-                      >
-                        + Agregar
-                      </button>
+                  <div>
+                    <div className="text-sm font-extrabold text-white">Servicios personalizados</div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      Agrega manualmente los servicios que llevará esta cotización
                     </div>
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={addEmptyService}
+                    className="rounded-2xl px-4 py-2 text-sm font-bold text-[#0b0f17]"
+                    style={{ background: "linear-gradient(135deg,#f2c94c,#d4a72c)" }}
+                  >
+                    + Agregar servicio
+                  </button>
+                </div>
+
+                <div className="mt-4 rounded-3xl border border-white/10 bg-[#0d1320] p-4 max-h-[560px] overflow-auto">
+                  {cart.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.03] p-10 text-center">
+                      <div className="text-sm font-semibold text-slate-300">
+                        No hay servicios agregados
+                      </div>
+                      <div className="mt-1 text-xs text-slate-500">
+                        Empieza agregando uno o varios servicios personalizados
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={addEmptyService}
+                        className="mt-5 rounded-2xl px-5 py-3 text-sm font-bold text-[#0b0f17]"
+                        style={{ background: "linear-gradient(135deg,#f2c94c,#d4a72c)" }}
+                      >
+                        + Agregar primer servicio
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {cart.map((it, idx) => (
+                        <div
+                          key={it.id}
+                          className="rounded-2xl border border-white/10 bg-white/[0.04] p-4"
+                        >
+                          <div className="mb-4 flex items-center justify-between gap-3">
+                            <div className="text-sm font-extrabold text-white">
+                              Servicio {idx + 1}
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => removeFromCart(it.id)}
+                              className="rounded-xl bg-rose-500/12 px-3 py-2 text-xs font-bold text-rose-300 hover:bg-rose-500/18"
+                            >
+                              Quitar
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            <Field label="Nombre del servicio *">
+                              <input
+                                value={it.title}
+                                onChange={(e) => setTitle(it.id, e.target.value)}
+                                className={darkInput}
+                                placeholder="Ej: Edición de video, diseño web, asesoría..."
+                              />
+                            </Field>
+
+                            <Field label="Cantidad">
+                              <input
+                                value={String(it.qty)}
+                                onChange={(e) => setQty(it.id, Number(e.target.value || 1))}
+                                className={darkInput}
+                                inputMode="numeric"
+                                placeholder="1"
+                              />
+                            </Field>
+
+                            <Field label="Valor unitario *">
+                              <input
+                                value={String(it.unit_price || "")}
+                                onChange={(e) => setUnitPrice(it.id, Number(e.target.value || 0))}
+                                className={darkInput}
+                                inputMode="decimal"
+                                placeholder="0"
+                              />
+                            </Field>
+
+                            <Field label="Total">
+                              <div className="flex h-[50px] items-center rounded-2xl border border-white/10 bg-white/[0.05] px-4 text-sm font-black text-white">
+                                {currency} {sym}
+                                {Math.round(it.qty * it.unit_price).toLocaleString()}
+                              </div>
+                            </Field>
+                          </div>
+
+                          <div className="mt-3">
+                            <Field label="Descripción (opcional)">
+                              <textarea
+                                value={it.description || ""}
+                                onChange={(e) => setDescription(it.id, e.target.value)}
+                                className="min-h-[110px] w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 text-sm text-white outline-none focus:bg-white/[0.07] focus:ring-2 focus:ring-[#f2c94c]/10"
+                                placeholder="Detalle del servicio, alcance, entregables, revisiones, etc."
+                              />
+                            </Field>
+                          </div>
+                        </div>
+                      ))}
+
+                      <button
+                        type="button"
+                        onClick={addEmptyService}
+                        className="w-full rounded-2xl border border-dashed border-[#f2c94c]/30 bg-[#f2c94c]/10 px-4 py-3 text-sm font-bold text-[#f2c94c] hover:bg-[#f2c94c]/15"
+                      >
+                        + Agregar otro servicio
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -461,7 +546,7 @@ export default function CreateQuoteMvpModalPage() {
                 ) : null}
 
                 <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <Field label="Cliente / Empresa Creativa">
+                  <Field label="Cliente / Empresa">
                     <input
                       value={clientName}
                       onChange={(e) => setClientName(e.target.value)}
@@ -480,10 +565,78 @@ export default function CreateQuoteMvpModalPage() {
                   </Field>
                 </div>
 
+                <div className="mt-4">
+                  <Field label="Adjunto referencial (opcional)">
+                    <div className="rounded-2xl border border-white/10 bg-[#0d1320] p-4">
+                      {!attachmentFile ? (
+                        <label className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-white/10 bg-white/[0.03] px-4 py-6 text-center transition hover:bg-white/[0.05]">
+                          <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/[0.05] text-[#f2c94c]">
+                            <PaperclipIcon />
+                          </span>
+                          <div>
+                            <div className="text-sm font-bold text-white">
+                              Seleccionar archivo
+                            </div>
+                            <div className="mt-1 text-xs text-slate-500">
+                              PDF, Word, Excel, imágenes u otro respaldo del detalle
+                            </div>
+                          </div>
+                          <input
+                            type="file"
+                            className="hidden"
+                            onChange={(e) => handleAttachmentChange(e.target.files?.[0] || null)}
+                          />
+                        </label>
+                      ) : (
+                        <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 text-sm font-bold text-white">
+                                <FileIcon />
+                                <span className="truncate">{attachmentFile.name}</span>
+                              </div>
+                              <div className="mt-1 text-xs text-slate-300">
+                                {formatFileSize(attachmentFile.size)}
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={removeAttachment}
+                              className="rounded-xl bg-rose-500/12 px-3 py-2 text-xs font-bold text-rose-300 hover:bg-rose-500/18"
+                            >
+                              Quitar
+                            </button>
+                          </div>
+
+                          <label className="mt-3 inline-flex cursor-pointer rounded-xl border border-white/10 bg-white/[0.05] px-3 py-2 text-xs font-bold text-slate-200 hover:bg-white/[0.08]">
+                            Cambiar archivo
+                            <input
+                              type="file"
+                              className="hidden"
+                              onChange={(e) => handleAttachmentChange(e.target.files?.[0] || null)}
+                            />
+                          </label>
+                        </div>
+                      )}
+
+                      {attachmentError ? (
+                        <div className="mt-3 rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">
+                          {attachmentError}
+                        </div>
+                      ) : null}
+
+                      <div className="mt-3 text-xs text-slate-500">
+                        El archivo seleccionado se subirá al guardar la cotización y quedará disponible para descarga pública.
+                      </div>
+                    </div>
+                  </Field>
+                </div>
+
                 <div className="mt-4 rounded-3xl border border-white/10 bg-[#0d1320] p-4">
                   {cart.length === 0 ? (
                     <div className="py-8 text-center text-sm text-slate-500">
-                      Selecciona servicios de la izquierda
+                      Agrega servicios personalizados para ver el resumen
                     </div>
                   ) : (
                     <div className="space-y-3">
@@ -493,48 +646,24 @@ export default function CreateQuoteMvpModalPage() {
                           className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
                         >
                           <div className="min-w-0">
-                            <div className="truncate text-sm font-extrabold text-white">{it.title}</div>
+                            <div className="truncate text-sm font-extrabold text-white">
+                              {it.title || "Servicio sin nombre"}
+                            </div>
                             {it.description ? (
                               <div className="mt-0.5 truncate text-xs text-slate-500">{it.description}</div>
                             ) : null}
                           </div>
 
                           <div className="flex items-center justify-between gap-2 sm:justify-end">
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => setQty(it.id, it.qty - 1)}
-                                className="h-9 w-9 rounded-xl border border-white/10 bg-white/[0.05] font-black text-slate-200 hover:bg-white/[0.1]"
-                              >
-                                −
-                              </button>
-                              <input
-                                value={String(it.qty)}
-                                onChange={(e) => setQty(it.id, Number(e.target.value || 1))}
-                                className="h-9 w-14 rounded-xl border border-white/10 bg-white/[0.05] text-center text-sm font-bold text-white outline-none focus:ring-2 focus:ring-[#f2c94c]/10"
-                                inputMode="numeric"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => setQty(it.id, it.qty + 1)}
-                                className="h-9 w-9 rounded-xl border border-white/10 bg-white/[0.05] font-black text-slate-200 hover:bg-white/[0.1]"
-                              >
-                                +
-                              </button>
+                            <div className="text-xs text-slate-400">
+                              {it.qty} × {sym}
+                              {Math.round(it.unit_price).toLocaleString()}
                             </div>
 
-                            <div className="w-[110px] text-right text-sm font-black text-white">
+                            <div className="w-[120px] text-right text-sm font-black text-white">
                               {sym}
                               {Math.round(it.qty * it.unit_price).toLocaleString()}
                             </div>
-
-                            <button
-                              type="button"
-                              onClick={() => removeFromCart(it.id)}
-                              className="h-9 rounded-xl bg-rose-500/12 px-3 text-xs font-bold text-rose-300 hover:bg-rose-500/18"
-                            >
-                              Quitar
-                            </button>
                           </div>
                         </div>
                       ))}
@@ -679,7 +808,7 @@ export default function CreateQuoteMvpModalPage() {
               disabled={!cart.length}
               title={!cart.length ? "Agrega servicios para previsualizar" : "Ver vista previa"}
             >
-              👁 Vista Previa
+              Vista Previa
             </button>
 
             <button
@@ -689,7 +818,7 @@ export default function CreateQuoteMvpModalPage() {
               className={`${yellowBtn} w-full sm:w-auto`}
               style={{ background: "linear-gradient(135deg,#f2c94c,#d4a72c)" }}
             >
-              {saving ? "Guardando..." : "💾 Guardar Cotización"}
+              {saving ? "Guardando..." : "Guardar Cotización"}
             </button>
           </div>
         </div>
@@ -726,9 +855,28 @@ export default function CreateQuoteMvpModalPage() {
               </div>
 
               <div className="flex-1 overflow-auto p-6">
+                {attachmentFile ? (
+                  <div className="mb-5 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                    <div className="text-sm font-extrabold text-white">Adjunto referencial</div>
+                    <div className="mt-3 flex items-center gap-3">
+                      <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/[0.05] text-[#f2c94c]">
+                        <FileIcon />
+                      </span>
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-white">
+                          {attachmentFile.name}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          {formatFileSize(attachmentFile.size)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
                 <div className="overflow-hidden rounded-3xl border border-white/10">
                   <div className="bg-white/[0.05] px-5 py-4 text-sm font-extrabold text-white">
-                    Servicios
+                    Servicios personalizados
                   </div>
 
                   <div className="space-y-3 p-5">
@@ -738,7 +886,9 @@ export default function CreateQuoteMvpModalPage() {
                         className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3"
                       >
                         <div className="min-w-0">
-                          <div className="truncate text-sm font-extrabold text-white">{it.title}</div>
+                          <div className="truncate text-sm font-extrabold text-white">
+                            {it.title || "Servicio sin nombre"}
+                          </div>
                           <div className="text-xs text-slate-500">
                             Qty: {it.qty} • Unit: {sym}
                             {Math.round(it.unit_price).toLocaleString()}
@@ -804,7 +954,7 @@ export default function CreateQuoteMvpModalPage() {
                   className={`${yellowBtn} w-full sm:w-auto`}
                   style={{ background: "linear-gradient(135deg,#f2c94c,#d4a72c)" }}
                 >
-                  {saving ? "Guardando..." : "💾 Guardar Cotización"}
+                  {saving ? "Guardando..." : "Guardar Cotización"}
                 </button>
               </div>
             </div>
@@ -815,7 +965,6 @@ export default function CreateQuoteMvpModalPage() {
   );
 }
 
-/* ===================== small UI ===================== */
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-2">
@@ -825,13 +974,13 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
+
 // "use client";
 
 // import { useEffect, useMemo, useState } from "react";
 // import { useParams, useRouter } from "next/navigation";
 // import { api } from "@/lib/api";
 
-// /* ===================== helpers ===================== */
 // function isUuid(v: string) {
 //   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
 // }
@@ -844,6 +993,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 //     </svg>
 //   );
 // }
+
 // function MoneyIcon() {
 //   return (
 //     <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.2">
@@ -852,11 +1002,20 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 //     </svg>
 //   );
 // }
-// function SearchIcon() {
+
+// function PaperclipIcon() {
 //   return (
 //     <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.2">
-//       <path d="M21 21l-4.3-4.3" />
-//       <path d="M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Z" />
+//       <path d="M21.44 11.05l-8.49 8.49a6 6 0 0 1-8.49-8.49l9.2-9.19a4 4 0 1 1 5.66 5.65l-9.19 9.2a2 2 0 1 1-2.83-2.83l8.49-8.48" />
+//     </svg>
+//   );
+// }
+
+// function FileIcon() {
+//   return (
+//     <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.2">
+//       <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7Z" />
+//       <path d="M14 2v5h5" />
 //     </svg>
 //   );
 // }
@@ -880,27 +1039,13 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 //   return `${yyyy}-${mm}-${dd}`;
 // }
 
-// /* ===================== types ===================== */
-// type ServiceCategory =
-//   | "all"
-//   | "design"
-//   | "digital"
-//   | "audiovisual"
-//   | "content"
-//   | "marketing"
-//   | "audio"
-//   | "events"
-//   | "consulting";
-
-// type Service = {
-//   id: string;
-//   cat: ServiceCategory;
-//   title: string;
-//   desc: string;
-//   price: number;
-//   unit: string; // "/proyecto", "/pieza", etc
-//   emoji: string;
-// };
+// function formatFileSize(bytes: number) {
+//   if (!bytes && bytes !== 0) return "—";
+//   if (bytes < 1024) return `${bytes} B`;
+//   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+//   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+//   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+// }
 
 // type CartItem = {
 //   id: string;
@@ -914,38 +1059,18 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 //   client_name?: string;
 //   client_email?: string;
 //   currency?: string;
-//   discount?: number; // ABS amount (backend)
-//   tax_rate?: number; // decimal (0.19)
-//   valid_until?: string; // YYYY-MM-DD
+//   discount?: number;
+//   tax_rate?: number;
+//   valid_until?: string;
 //   notes?: string;
 //   terms?: string;
+//   attachment_name?: string;
+//   attachment_url?: string;
+//   attachment_mime_type?: string;
 // };
 
-// const CATEGORIES: { id: ServiceCategory; label: string; emoji: string }[] = [
-//   { id: "all", label: "Todos", emoji: "📦" },
-//   { id: "design", label: "Diseño", emoji: "🎨" },
-//   { id: "digital", label: "Digital", emoji: "💻" },
-//   { id: "audiovisual", label: "Audiovisual", emoji: "🎬" },
-//   { id: "content", label: "Contenido", emoji: "✍️" },
-//   { id: "marketing", label: "Marketing", emoji: "📣" },
-//   { id: "audio", label: "Audio", emoji: "🎧" },
-//   { id: "events", label: "Eventos", emoji: "🎪" },
-//   { id: "consulting", label: "Consultoría", emoji: "💼" },
-// ];
-
-// // Presets (puedes irlos cambiando, la lógica queda lista)
-// const SERVICES: Service[] = [
-//   { id: "logo", cat: "design", title: "Diseño de Logo", desc: "Incluye 3 propuestas y 2 revisiones", price: 500, unit: "/proyecto", emoji: "🎨" },
-//   { id: "brandbook", cat: "design", title: "Manual de Marca", desc: "Guía completa de identidad visual", price: 1500, unit: "/proyecto", emoji: "📘" },
-//   { id: "rrss", cat: "marketing", title: "Kit Redes Sociales", desc: "10 templates editables", price: 300, unit: "/paquete", emoji: "📱" },
-//   { id: "flyer", cat: "design", title: "Flyer / Afíche", desc: "Diseño digital o impreso", price: 100, unit: "/pieza", emoji: "🧾" },
-//   { id: "web", cat: "digital", title: "Landing Page", desc: "Diseño + implementación básica", price: 900, unit: "/proyecto", emoji: "💻" },
-//   { id: "video", cat: "audiovisual", title: "Edición de Video", desc: "Edición + música + subtítulos básicos", price: 650, unit: "/video", emoji: "🎬" },
-//   { id: "photo", cat: "audiovisual", title: "Sesión Fotográfica", desc: "20 fotos editadas", price: 400, unit: "/sesión", emoji: "📸" },
-//   { id: "copy", cat: "content", title: "Copywriting", desc: "Texto para campaña / anuncios", price: 180, unit: "/entrega", emoji: "✍️" },
-// ];
-
 // type TaxPreset = { id: string; label: string; ratePct: number };
+
 // const TAX_PRESETS: TaxPreset[] = [
 //   { id: "cl", label: "Chile (IVA 19%)", ratePct: 19 },
 //   { id: "mx", label: "México (IVA 16%)", ratePct: 16 },
@@ -953,25 +1078,21 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 //   { id: "none", label: "Exento / Sin impuesto", ratePct: 0 },
 // ];
 
-// /* ===================== page ===================== */
+// const darkInput =
+//   "w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:bg-white/[0.07] focus:ring-2 focus:ring-[#f2c94c]/10";
+
+// const yellowBtn =
+//   "rounded-2xl px-6 py-3 text-sm font-black text-[#0b0f17] transition hover:opacity-95 disabled:opacity-60";
+
 // export default function CreateQuoteMvpModalPage() {
 //   const router = useRouter();
 //   const params = useParams<{ id: string }>();
 //   const projectId = params?.id || "";
 //   const validId = useMemo(() => isUuid(projectId), [projectId]);
 
-//   // left side
-//   const [cat, setCat] = useState<ServiceCategory>("all");
-//   const [q, setQ] = useState("");
-
-//   // cart
 //   const [cart, setCart] = useState<CartItem[]>([]);
-//   const [customName, setCustomName] = useState("");
-//   const [customPrice, setCustomPrice] = useState("");
-//   const [customQty, setCustomQty] = useState("1");
 
-//   // right side (quote fields)
-//   const [clientName, setClientName] = useState("jesus");
+//   const [clientName, setClientName] = useState("");
 //   const [clientEmail, setClientEmail] = useState("");
 //   const [currency, setCurrency] = useState("USD");
 
@@ -981,18 +1102,19 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 //   const [taxPreset, setTaxPreset] = useState<string>("cl");
 //   const [taxEnabled, setTaxEnabled] = useState(true);
 
-//   const [discountPct, setDiscountPct] = useState("0"); // MVP usa %
+//   const [discountPct, setDiscountPct] = useState("0");
 //   const [notes, setNotes] = useState("");
 //   const [terms, setTerms] = useState("");
 
-//   // ui states
+//   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+//   const [attachmentError, setAttachmentError] = useState<string | null>(null);
+
 //   const [saving, setSaving] = useState(false);
 //   const [err, setErr] = useState<string | null>(null);
 //   const [previewOpen, setPreviewOpen] = useState(false);
 
 //   const close = () => router.push(`/producer/projects/${projectId}`);
 
-//   // lock scroll
 //   useEffect(() => {
 //     const prev = document.body.style.overflow;
 //     document.body.style.overflow = "hidden";
@@ -1001,32 +1123,18 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 //     };
 //   }, []);
 
-//   // ESC
 //   useEffect(() => {
 //     const onKey = (e: KeyboardEvent) => {
 //       if (e.key === "Escape") close();
 //     };
 //     window.addEventListener("keydown", onKey);
 //     return () => window.removeEventListener("keydown", onKey);
-//     // eslint-disable-next-line react-hooks/exhaustive-deps
 //   }, [projectId]);
 
-//   // valid days -> validUntil
 //   useEffect(() => {
 //     const d = clamp(Number(validDays || 0), 0, 3650);
 //     setValidUntil(addDaysISO(d || 0));
 //   }, [validDays]);
-
-//   const filteredServices = useMemo(() => {
-//     const text = q.trim().toLowerCase();
-//     return SERVICES.filter((s) => {
-//       const catOk = cat === "all" ? true : s.cat === cat;
-//       const textOk = !text
-//         ? true
-//         : (s.title + " " + s.desc).toLowerCase().includes(text);
-//       return catOk && textOk;
-//     });
-//   }, [cat, q]);
 
 //   const subtotal = useMemo(() => {
 //     return cart.reduce((sum, it) => sum + it.qty * it.unit_price, 0);
@@ -1051,264 +1159,397 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 //     return Math.max(0, subtotal - discountAmount) + taxAmount;
 //   }, [subtotal, discountAmount, taxAmount]);
 
-//   const addServiceToCart = (s: Service) => {
-//     setCart((prev) => {
-//       const idx = prev.findIndex((p) => p.id === s.id);
-//       if (idx >= 0) {
-//         const copy = [...prev];
-//         copy[idx] = { ...copy[idx], qty: copy[idx].qty + 1 };
-//         return copy;
-//       }
-//       return [
-//         ...prev,
-//         { id: s.id, title: s.title, description: s.desc, qty: 1, unit_price: s.price },
-//       ];
-//     });
+//   const addEmptyService = () => {
+//     const id = `custom-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+//     setCart((prev) => [
+//       ...prev,
+//       {
+//         id,
+//         title: "",
+//         description: "",
+//         qty: 1,
+//         unit_price: 0,
+//       },
+//     ]);
 //   };
 
 //   const removeFromCart = (id: string) => {
 //     setCart((prev) => prev.filter((p) => p.id !== id));
 //   };
 
-//   const setQty = (id: string, qty: number) => {
-//     const q2 = clamp(qty, 1, 9999);
-//     setCart((prev) => prev.map((p) => (p.id === id ? { ...p, qty: q2 } : p)));
+//   const updateItem = (id: string, patch: Partial<CartItem>) => {
+//     setCart((prev) =>
+//       prev.map((item) => {
+//         if (item.id !== id) return item;
+//         return { ...item, ...patch };
+//       })
+//     );
 //   };
 
-//   const addCustom = () => {
-//     const name = customName.trim();
-//     const price = Number(customPrice || 0);
-//     const qty = Number(customQty || 1);
+//   const setQty = (id: string, qty: number) => {
+//     const q2 = clamp(Number.isFinite(qty) ? qty : 1, 1, 9999);
+//     updateItem(id, { qty: q2 });
+//   };
 
-//     if (!name || !Number.isFinite(price) || price <= 0) return;
+//   const setUnitPrice = (id: string, price: number) => {
+//     const p2 = Math.max(0, Number.isFinite(price) ? price : 0);
+//     updateItem(id, { unit_price: p2 });
+//   };
 
-//     const id = `custom-${Date.now()}`;
-//     setCart((prev) => [
-//       ...prev,
-//       { id, title: name, description: "", qty: clamp(qty, 1, 9999), unit_price: price },
-//     ]);
-//     setCustomName("");
-//     setCustomPrice("");
-//     setCustomQty("1");
+//   const setTitle = (id: string, title: string) => {
+//     updateItem(id, { title });
+//   };
+
+//   const setDescription = (id: string, description: string) => {
+//     updateItem(id, { description });
+//   };
+
+//   const handleAttachmentChange = (file: File | null) => {
+//     setAttachmentError(null);
+
+//     if (!file) {
+//       setAttachmentFile(null);
+//       return;
+//     }
+
+//     const maxSize = 15 * 1024 * 1024;
+//     if (file.size > maxSize) {
+//       setAttachmentFile(null);
+//       setAttachmentError("El archivo supera el límite de 15 MB.");
+//       return;
+//     }
+
+//     setAttachmentFile(file);
+//   };
+
+//   const removeAttachment = () => {
+//     setAttachmentFile(null);
+//     setAttachmentError(null);
 //   };
 
 //   const saveQuote = async () => {
-//     if (saving) return;
-//     setSaving(true);
-//     setErr(null);
+//   if (saving) return;
+//   setSaving(true);
+//   setErr(null);
 
-//     try {
-//       if (!cart.length) {
-//         setErr("Agrega al menos un servicio antes de guardar.");
-//         setSaving(false);
-//         return;
-//       }
+//   try {
+//     const cleanedItems = cart
+//       .map((it) => ({
+//         ...it,
+//         title: it.title.trim(),
+//         description: (it.description || "").trim(),
+//         qty: clamp(Number(it.qty || 1), 1, 9999),
+//         unit_price: Math.max(0, Number(it.unit_price || 0)),
+//       }))
+//       .filter((it) => it.title && it.unit_price >= 0);
 
-//       const discountAbs = Math.round(discountAmount * 100) / 100;
-//       const taxRateDecimal = taxRatePct / 100;
+//     if (!cleanedItems.length) {
+//       setErr("Agrega al menos un servicio personalizado válido antes de guardar.");
+//       setSaving(false);
+//       return;
+//     }
 
-//       const payload: QuoteCreatePayload = {
-//         client_name: clientName.trim() || undefined,
-//         client_email: clientEmail.trim() || undefined,
-//         currency: currency || undefined,
-//         discount: discountAbs,
-//         tax_rate: taxRateDecimal,
-//         valid_until: validUntil || undefined,
-//         notes: notes.trim() || undefined,
-//         terms: terms.trim() || undefined,
-//       };
+//     const invalid = cleanedItems.some((it) => !it.title || it.qty <= 0);
+//     if (invalid) {
+//       setErr("Revisa los servicios. Todos deben tener nombre y cantidad válida.");
+//       setSaving(false);
+//       return;
+//     }
 
-//       const created = await api<{ ok: true; quote: { id: string } }>(`/projects/${projectId}/quotes`, {
+//     const discountAbs = Math.round(discountAmount * 100) / 100;
+//     const taxRateDecimal = taxRatePct / 100;
+
+//     const payload: QuoteCreatePayload = {
+//       client_name: clientName.trim() || undefined,
+//       client_email: clientEmail.trim() || undefined,
+//       currency: currency || undefined,
+//       discount: discountAbs,
+//       tax_rate: taxRateDecimal,
+//       valid_until: validUntil || undefined,
+//       notes: notes.trim() || undefined,
+//       terms: terms.trim() || undefined,
+//       attachment_name: attachmentFile?.name || undefined,
+//       attachment_mime_type: attachmentFile?.type || undefined,
+//       attachment_url: undefined,
+//     };
+
+//     const created = await api<{ ok: true; quote: { id: string } }>(
+//       `/projects/${projectId}/quotes`,
+//       {
 //         method: "POST",
 //         body: JSON.stringify(payload),
-//       });
-
-//       const quoteId = created.quote.id;
-
-//       // create items
-//       let sort = 0;
-//       for (const it of cart) {
-//         await api(`/quotes/${quoteId}/items`, {
-//           method: "POST",
-//           body: JSON.stringify({
-//             title: it.title,
-//             description: it.description || undefined,
-//             qty: it.qty,
-//             unit_price: it.unit_price,
-//             sort_order: sort++,
-//           }),
-//         });
 //       }
+//     );
 
-//       router.push(`/producer/quotes/${quoteId}`);
-//     } catch (e: any) {
-//       setErr(String(e?.message || e));
-//     } finally {
-//       setSaving(false);
+//     const quoteId = created.quote.id;
+
+//     let sort = 0;
+//     for (const it of cleanedItems) {
+//       await api(`/quotes/${quoteId}/items`, {
+//         method: "POST",
+//         body: JSON.stringify({
+//           title: it.title,
+//           description: it.description || undefined,
+//           qty: it.qty,
+//           unit_price: it.unit_price,
+//           sort_order: sort++,
+//         }),
+//       });
 //     }
-//   };
 
-//   if (!validId) return <div className="p-6 text-rose-600">Proyecto inválido.</div>;
+//     router.push(`/producer/quotes/${quoteId}`);
+//   } catch (e: any) {
+//     setErr(String(e?.message || e));
+//   } finally {
+//     setSaving(false);
+//   }
+// };
+//   // const saveQuote = async () => {
+//   //   if (saving) return;
+//   //   setSaving(true);
+//   //   setErr(null);
+
+//   //   try {
+//   //     const cleanedItems = cart
+//   //       .map((it) => ({
+//   //         ...it,
+//   //         title: it.title.trim(),
+//   //         description: (it.description || "").trim(),
+//   //         qty: clamp(Number(it.qty || 1), 1, 9999),
+//   //         unit_price: Math.max(0, Number(it.unit_price || 0)),
+//   //       }))
+//   //       .filter((it) => it.title && it.unit_price >= 0);
+
+//   //     if (!cleanedItems.length) {
+//   //       setErr("Agrega al menos un servicio personalizado válido antes de guardar.");
+//   //       setSaving(false);
+//   //       return;
+//   //     }
+
+//   //     const invalid = cleanedItems.some((it) => !it.title || it.qty <= 0);
+//   //     if (invalid) {
+//   //       setErr("Revisa los servicios. Todos deben tener nombre y cantidad válida.");
+//   //       setSaving(false);
+//   //       return;
+//   //     }
+
+//   //     const discountAbs = Math.round(discountAmount * 100) / 100;
+//   //     const taxRateDecimal = taxRatePct / 100;
+
+//   //     const payload: QuoteCreatePayload = {
+//   //       client_name: clientName.trim() || undefined,
+//   //       client_email: clientEmail.trim() || undefined,
+//   //       currency: currency || undefined,
+//   //       discount: discountAbs,
+//   //       tax_rate: taxRateDecimal,
+//   //       valid_until: validUntil || undefined,
+//   //       notes: notes.trim() || undefined,
+//   //       terms: terms.trim() || undefined,
+//   //       attachment_name: attachmentFile?.name || undefined,
+//   //       attachment_url: undefined,
+//   //       attachment_mime_type: attachmentFile?.type || undefined,
+//   //     };
+
+//   //     const created = await api<{ ok: true; quote: { id: string } }>(`/projects/${projectId}/quotes`, {
+//   //       method: "POST",
+//   //       body: JSON.stringify(payload),
+//   //     });
+
+//   //     const quoteId = created.quote.id;
+
+//   //     let sort = 0;
+//   //     for (const it of cleanedItems) {
+//   //       await api(`/quotes/${quoteId}/items`, {
+//   //         method: "POST",
+//   //         body: JSON.stringify({
+//   //           title: it.title,
+//   //           description: it.description || undefined,
+//   //           qty: it.qty,
+//   //           unit_price: it.unit_price,
+//   //           sort_order: sort++,
+//   //         }),
+//   //       });
+//   //     }
+
+//   //     router.push(`/producer/quotes/${quoteId}`);
+//   //   } catch (e: any) {
+//   //     setErr(String(e?.message || e));
+//   //   } finally {
+//   //     setSaving(false);
+//   //   }
+//   // };
+
+//   if (!validId) return <div className="p-6 text-rose-400">Proyecto inválido.</div>;
 
 //   const sym = currencySymbol(currency);
 
 //   return (
 //     <div className="fixed inset-0 z-50">
-//       {/* overlay */}
-//       <button type="button" className="absolute inset-0 bg-black/55" onClick={close} aria-label="Cerrar" />
+//       <button type="button" className="absolute inset-0 bg-black/75" onClick={close} aria-label="Cerrar" />
 
-//       {/* modal */}
 //       <div className="absolute inset-0 flex items-center justify-center p-4 sm:p-6">
-//         <div className="w-full max-w-[1180px] max-h-[92vh] rounded-3xl bg-white shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
-//           {/* header */}
-//           <div className="px-6 py-5 border-b border-slate-200 flex items-start justify-between gap-4">
+//         <div className="flex max-h-[92vh] w-full max-w-[1180px] flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#0b1220] shadow-2xl">
+//           <div className="flex items-start justify-between gap-4 border-b border-white/10 px-6 py-5">
 //             <div className="min-w-0">
-//               <div className="flex items-center gap-2 text-lg font-black text-slate-900">
+//               <div className="flex items-center gap-2 text-lg font-black text-white">
 //                 <span className="text-base">💰</span>
 //                 <span>Crear Cotización</span>
 //               </div>
-//               <div className="mt-1 text-xs text-slate-500 truncate">{projectId}</div>
+//               <div className="mt-1 truncate text-xs text-slate-500">{projectId}</div>
 //             </div>
 
 //             <button
 //               type="button"
 //               onClick={close}
-//               className="shrink-0 rounded-2xl bg-slate-100 px-3 py-2 text-slate-700 hover:bg-slate-200"
+//               className="shrink-0 rounded-2xl bg-white/[0.06] px-3 py-2 text-slate-300 hover:bg-white/[0.1]"
 //               aria-label="Cerrar modal"
 //             >
 //               <XIcon />
 //             </button>
 //           </div>
 
-//           {/* body */}
 //           <div className="flex-1 overflow-auto">
 //             <div className="grid grid-cols-1 lg:grid-cols-2">
-//               {/* LEFT */}
-//               <div className="border-b lg:border-b-0 lg:border-r border-slate-200 p-6">
+//               <div className="border-b border-white/10 p-6 lg:border-b-0 lg:border-r">
 //                 <div className="flex items-center justify-between gap-3">
-//                   <div className="text-sm font-extrabold text-slate-900">Agregar Servicios</div>
-//                   <div className="relative w-[220px] hidden sm:block">
-//                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">
-//                       <SearchIcon />
-//                     </span>
-//                     <input
-//                       value={q}
-//                       onChange={(e) => setQ(e.target.value)}
-//                       placeholder="Buscar..."
-//                       className="w-full rounded-2xl border border-slate-200 bg-slate-50 pl-9 pr-3 py-2.5 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-blue-200"
-//                     />
-//                   </div>
-//                 </div>
-
-//                 {/* categories */}
-//                 <div className="mt-4 flex flex-wrap gap-2">
-//                   {CATEGORIES.map((c) => {
-//                     const active = c.id === cat;
-//                     return (
-//                       <button
-//                         key={c.id}
-//                         type="button"
-//                         onClick={() => setCat(c.id)}
-//                         className={[
-//                           "rounded-2xl px-3 py-2 text-xs font-bold border transition inline-flex items-center gap-2",
-//                           active
-//                             ? "bg-blue-600 text-white border-blue-600"
-//                             : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50",
-//                         ].join(" ")}
-//                       >
-//                         <span>{c.emoji}</span>
-//                         <span>{c.label}</span>
-//                       </button>
-//                     );
-//                   })}
-//                 </div>
-
-//                 {/* services list */}
-//                 <div className="mt-4 rounded-3xl border border-slate-200 bg-slate-50 p-4 max-h-[420px] overflow-auto">
-//                   {filteredServices.map((s) => (
-//                     <button
-//                       key={s.id}
-//                       type="button"
-//                       onClick={() => addServiceToCart(s)}
-//                       className="w-full text-left rounded-2xl border border-slate-200 bg-white p-4 mb-3 hover:bg-slate-50"
-//                       title="Click para agregar"
-//                     >
-//                       <div className="flex items-start justify-between gap-3">
-//                         <div className="min-w-0">
-//                           <div className="text-sm font-extrabold text-slate-900 inline-flex items-center gap-2">
-//                             <span>{s.emoji}</span>
-//                             <span>{s.title}</span>
-//                           </div>
-//                           <div className="mt-1 text-xs text-slate-500">{s.desc}</div>
-//                         </div>
-//                         <div className="text-right shrink-0">
-//                           <div className="text-sm font-black text-blue-600">
-//                             {sym}
-//                             {Math.round(s.price).toLocaleString()}
-//                           </div>
-//                           <div className="text-[10px] text-slate-400">{s.unit}</div>
-//                         </div>
-//                       </div>
-//                     </button>
-//                   ))}
-
-//                   {/* custom */}
-//                   <div className="mt-3 rounded-2xl border border-dashed border-slate-200 bg-white p-4">
-//                     <div className="text-xs font-bold text-slate-600">+ Servicio personalizado</div>
-
-//                     <div className="mt-3 grid grid-cols-1 sm:grid-cols-5 gap-2">
-//                       <input
-//                         value={customName}
-//                         onChange={(e) => setCustomName(e.target.value)}
-//                         className="sm:col-span-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-blue-200"
-//                         placeholder="Nombre del servicio"
-//                       />
-//                       <input
-//                         value={customPrice}
-//                         onChange={(e) => setCustomPrice(e.target.value)}
-//                         className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-blue-200"
-//                         placeholder="Precio"
-//                         inputMode="decimal"
-//                       />
-//                       <input
-//                         value={customQty}
-//                         onChange={(e) => setCustomQty(e.target.value)}
-//                         className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-blue-200"
-//                         placeholder="Qty"
-//                         inputMode="numeric"
-//                       />
-//                       <button
-//                         type="button"
-//                         onClick={addCustom}
-//                         className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-200"
-//                       >
-//                         + Agregar
-//                       </button>
+//                   <div>
+//                     <div className="text-sm font-extrabold text-white">Servicios personalizados</div>
+//                     <div className="mt-1 text-xs text-slate-500">
+//                       Agrega manualmente los servicios que llevará esta cotización
 //                     </div>
 //                   </div>
+
+//                   <button
+//                     type="button"
+//                     onClick={addEmptyService}
+//                     className="rounded-2xl px-4 py-2 text-sm font-bold text-[#0b0f17]"
+//                     style={{ background: "linear-gradient(135deg,#f2c94c,#d4a72c)" }}
+//                   >
+//                     + Agregar servicio
+//                   </button>
+//                 </div>
+
+//                 <div className="mt-4 rounded-3xl border border-white/10 bg-[#0d1320] p-4 max-h-[560px] overflow-auto">
+//                   {cart.length === 0 ? (
+//                     <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.03] p-10 text-center">
+//                       <div className="text-sm font-semibold text-slate-300">
+//                         No hay servicios agregados
+//                       </div>
+//                       <div className="mt-1 text-xs text-slate-500">
+//                         Empieza agregando uno o varios servicios personalizados
+//                       </div>
+
+//                       <button
+//                         type="button"
+//                         onClick={addEmptyService}
+//                         className="mt-5 rounded-2xl px-5 py-3 text-sm font-bold text-[#0b0f17]"
+//                         style={{ background: "linear-gradient(135deg,#f2c94c,#d4a72c)" }}
+//                       >
+//                         + Agregar primer servicio
+//                       </button>
+//                     </div>
+//                   ) : (
+//                     <div className="space-y-4">
+//                       {cart.map((it, idx) => (
+//                         <div
+//                           key={it.id}
+//                           className="rounded-2xl border border-white/10 bg-white/[0.04] p-4"
+//                         >
+//                           <div className="mb-4 flex items-center justify-between gap-3">
+//                             <div className="text-sm font-extrabold text-white">
+//                               Servicio {idx + 1}
+//                             </div>
+
+//                             <button
+//                               type="button"
+//                               onClick={() => removeFromCart(it.id)}
+//                               className="rounded-xl bg-rose-500/12 px-3 py-2 text-xs font-bold text-rose-300 hover:bg-rose-500/18"
+//                             >
+//                               Quitar
+//                             </button>
+//                           </div>
+
+//                           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+//                             <Field label="Nombre del servicio *">
+//                               <input
+//                                 value={it.title}
+//                                 onChange={(e) => setTitle(it.id, e.target.value)}
+//                                 className={darkInput}
+//                                 placeholder="Ej: Edición de video, diseño web, asesoría..."
+//                               />
+//                             </Field>
+
+//                             <Field label="Cantidad">
+//                               <input
+//                                 value={String(it.qty)}
+//                                 onChange={(e) => setQty(it.id, Number(e.target.value || 1))}
+//                                 className={darkInput}
+//                                 inputMode="numeric"
+//                                 placeholder="1"
+//                               />
+//                             </Field>
+
+//                             <Field label="Valor unitario *">
+//                               <input
+//                                 value={String(it.unit_price || "")}
+//                                 onChange={(e) => setUnitPrice(it.id, Number(e.target.value || 0))}
+//                                 className={darkInput}
+//                                 inputMode="decimal"
+//                                 placeholder="0"
+//                               />
+//                             </Field>
+
+//                             <Field label="Total">
+//                               <div className="flex h-[50px] items-center rounded-2xl border border-white/10 bg-white/[0.05] px-4 text-sm font-black text-white">
+//                                 {currency} {sym}
+//                                 {Math.round(it.qty * it.unit_price).toLocaleString()}
+//                               </div>
+//                             </Field>
+//                           </div>
+
+//                           <div className="mt-3">
+//                             <Field label="Descripción (opcional)">
+//                               <textarea
+//                                 value={it.description || ""}
+//                                 onChange={(e) => setDescription(it.id, e.target.value)}
+//                                 className="min-h-[110px] w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 text-sm text-white outline-none focus:bg-white/[0.07] focus:ring-2 focus:ring-[#f2c94c]/10"
+//                                 placeholder="Detalle del servicio, alcance, entregables, revisiones, etc."
+//                               />
+//                             </Field>
+//                           </div>
+//                         </div>
+//                       ))}
+
+//                       <button
+//                         type="button"
+//                         onClick={addEmptyService}
+//                         className="w-full rounded-2xl border border-dashed border-[#f2c94c]/30 bg-[#f2c94c]/10 px-4 py-3 text-sm font-bold text-[#f2c94c] hover:bg-[#f2c94c]/15"
+//                       >
+//                         + Agregar otro servicio
+//                       </button>
+//                     </div>
+//                   )}
 //                 </div>
 //               </div>
 
-//               {/* RIGHT */}
 //               <div className="p-6">
-//                 <div className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+//                 <div className="flex items-center gap-2 text-sm font-extrabold text-white">
 //                   <span className="text-base">📋</span>
 //                   <span>Resumen de Cotización</span>
 //                 </div>
 
 //                 {err ? (
-//                   <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+//                   <div className="mt-4 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
 //                     {err}
 //                   </div>
 //                 ) : null}
 
-//                 {/* client */}
-//                 <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-//                   <Field label="Cliente / Empresa Creativa">
+//                 <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+//                   <Field label="Cliente / Empresa">
 //                     <input
 //                       value={clientName}
 //                       onChange={(e) => setClientName(e.target.value)}
-//                       className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-blue-200"
+//                       className={darkInput}
 //                       placeholder="Nombre del cliente"
 //                     />
 //                   </Field>
@@ -1317,68 +1558,112 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 //                     <input
 //                       value={clientEmail}
 //                       onChange={(e) => setClientEmail(e.target.value)}
-//                       className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-blue-200"
+//                       className={darkInput}
 //                       placeholder="email@cliente.com"
 //                     />
 //                   </Field>
 //                 </div>
 
-//                 {/* selected services */}
-//                 <div className="mt-4 rounded-3xl border border-slate-200 bg-slate-50/40 p-4">
+//                 <div className="mt-4">
+//                   <Field label="Adjunto referencial (opcional)">
+//                     <div className="rounded-2xl border border-white/10 bg-[#0d1320] p-4">
+//                       {!attachmentFile ? (
+//                         <label className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-white/10 bg-white/[0.03] px-4 py-6 text-center transition hover:bg-white/[0.05]">
+//                           <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/[0.05] text-[#f2c94c]">
+//                             <PaperclipIcon />
+//                           </span>
+//                           <div>
+//                             <div className="text-sm font-bold text-white">
+//                               Seleccionar archivo
+//                             </div>
+//                             <div className="mt-1 text-xs text-slate-500">
+//                               PDF, Word, Excel, imágenes u otro respaldo del detalle
+//                             </div>
+//                           </div>
+//                           <input
+//                             type="file"
+//                             className="hidden"
+//                             onChange={(e) => handleAttachmentChange(e.target.files?.[0] || null)}
+//                           />
+//                         </label>
+//                       ) : (
+//                         <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+//                           <div className="flex items-start justify-between gap-3">
+//                             <div className="min-w-0">
+//                               <div className="flex items-center gap-2 text-sm font-bold text-white">
+//                                 <FileIcon />
+//                                 <span className="truncate">{attachmentFile.name}</span>
+//                               </div>
+//                               <div className="mt-1 text-xs text-slate-300">
+//                                 {formatFileSize(attachmentFile.size)}
+//                               </div>
+//                             </div>
+
+//                             <button
+//                               type="button"
+//                               onClick={removeAttachment}
+//                               className="rounded-xl bg-rose-500/12 px-3 py-2 text-xs font-bold text-rose-300 hover:bg-rose-500/18"
+//                             >
+//                               Quitar
+//                             </button>
+//                           </div>
+
+//                           <label className="mt-3 inline-flex cursor-pointer rounded-xl border border-white/10 bg-white/[0.05] px-3 py-2 text-xs font-bold text-slate-200 hover:bg-white/[0.08]">
+//                             Cambiar archivo
+//                             <input
+//                               type="file"
+//                               className="hidden"
+//                               onChange={(e) => handleAttachmentChange(e.target.files?.[0] || null)}
+//                             />
+//                           </label>
+//                         </div>
+//                       )}
+
+//                       {attachmentError ? (
+//                         <div className="mt-3 rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">
+//                           {attachmentError}
+//                         </div>
+//                       ) : null}
+
+//                       <div className="mt-3 text-xs text-slate-500">
+//                         El archivo ya queda preparado para enviarse como metadato de la cotización.
+//                         El siguiente paso será conectarlo con subida real al backend/storage.
+//                       </div>
+//                     </div>
+//                   </Field>
+//                 </div>
+
+//                 <div className="mt-4 rounded-3xl border border-white/10 bg-[#0d1320] p-4">
 //                   {cart.length === 0 ? (
-//                     <div className="text-sm text-slate-500 text-center py-8">
-//                       Selecciona servicios de la izquierda
+//                     <div className="py-8 text-center text-sm text-slate-500">
+//                       Agrega servicios personalizados para ver el resumen
 //                     </div>
 //                   ) : (
 //                     <div className="space-y-3">
 //                       {cart.map((it) => (
 //                         <div
 //                           key={it.id}
-//                           className="rounded-2xl border border-slate-200 bg-white px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+//                           className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
 //                         >
 //                           <div className="min-w-0">
-//                             <div className="text-sm font-extrabold text-slate-900 truncate">{it.title}</div>
+//                             <div className="truncate text-sm font-extrabold text-white">
+//                               {it.title || "Servicio sin nombre"}
+//                             </div>
 //                             {it.description ? (
-//                               <div className="text-xs text-slate-500 mt-0.5 truncate">{it.description}</div>
+//                               <div className="mt-0.5 truncate text-xs text-slate-500">{it.description}</div>
 //                             ) : null}
 //                           </div>
 
-//                           <div className="flex items-center justify-between sm:justify-end gap-2">
-//                             <div className="flex items-center gap-2">
-//                               <button
-//                                 type="button"
-//                                 onClick={() => setQty(it.id, it.qty - 1)}
-//                                 className="h-9 w-9 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 font-black"
-//                               >
-//                                 −
-//                               </button>
-//                               <input
-//                                 value={String(it.qty)}
-//                                 onChange={(e) => setQty(it.id, Number(e.target.value || 1))}
-//                                 className="w-14 h-9 rounded-xl border border-slate-200 bg-white text-center text-sm font-bold outline-none focus:ring-2 focus:ring-blue-200"
-//                                 inputMode="numeric"
-//                               />
-//                               <button
-//                                 type="button"
-//                                 onClick={() => setQty(it.id, it.qty + 1)}
-//                                 className="h-9 w-9 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 font-black"
-//                               >
-//                                 +
-//                               </button>
+//                           <div className="flex items-center justify-between gap-2 sm:justify-end">
+//                             <div className="text-xs text-slate-400">
+//                               {it.qty} × {sym}
+//                               {Math.round(it.unit_price).toLocaleString()}
 //                             </div>
 
-//                             <div className="text-sm font-black text-slate-900 w-[110px] text-right">
+//                             <div className="w-[120px] text-right text-sm font-black text-white">
 //                               {sym}
 //                               {Math.round(it.qty * it.unit_price).toLocaleString()}
 //                             </div>
-
-//                             <button
-//                               type="button"
-//                               onClick={() => removeFromCart(it.id)}
-//                               className="h-9 px-3 rounded-xl bg-rose-50 text-rose-700 text-xs font-bold hover:bg-rose-100"
-//                             >
-//                               Quitar
-//                             </button>
 //                           </div>
 //                         </div>
 //                       ))}
@@ -1386,14 +1671,9 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 //                   )}
 //                 </div>
 
-//                 {/* controls */}
-//                 <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+//                 <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
 //                   <Field label="Moneda">
-//                     <select
-//                       value={currency}
-//                       onChange={(e) => setCurrency(e.target.value)}
-//                       className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-blue-200"
-//                     >
+//                     <select value={currency} onChange={(e) => setCurrency(e.target.value)} className={darkInput}>
 //                       <option value="USD">USD</option>
 //                       <option value="CLP">CLP</option>
 //                       <option value="EUR">EUR</option>
@@ -1404,17 +1684,13 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 //                     <input
 //                       value={validDays}
 //                       onChange={(e) => setValidDays(e.target.value)}
-//                       className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-blue-200"
+//                       className={darkInput}
 //                       inputMode="numeric"
 //                     />
 //                   </Field>
 
 //                   <Field label="País (Impuesto)">
-//                     <select
-//                       value={taxPreset}
-//                       onChange={(e) => setTaxPreset(e.target.value)}
-//                       className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-blue-200"
-//                     >
+//                     <select value={taxPreset} onChange={(e) => setTaxPreset(e.target.value)} className={darkInput}>
 //                       {TAX_PRESETS.map((t) => (
 //                         <option key={t.id} value={t.id}>
 //                           {t.label}
@@ -1424,13 +1700,13 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 //                   </Field>
 
 //                   <Field label="Aplicar impuesto">
-//                     <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+//                     <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 text-sm">
 //                       <input
 //                         type="checkbox"
 //                         checked={taxEnabled}
 //                         onChange={(e) => setTaxEnabled(e.target.checked)}
 //                       />
-//                       <span className="text-slate-700 font-semibold">
+//                       <span className="font-semibold text-slate-200">
 //                         {taxEnabled ? `${taxRatePct}%` : "0%"}
 //                       </span>
 //                     </label>
@@ -1440,7 +1716,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 //                     <input
 //                       value={discountPct}
 //                       onChange={(e) => setDiscountPct(e.target.value)}
-//                       className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-blue-200"
+//                       className={darkInput}
 //                       inputMode="decimal"
 //                     />
 //                   </Field>
@@ -1450,17 +1726,17 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 //                       type="date"
 //                       value={validUntil}
 //                       onChange={(e) => setValidUntil(e.target.value)}
-//                       className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-blue-200"
+//                       className={darkInput}
 //                     />
 //                   </Field>
 //                 </div>
 
-//                 <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+//                 <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
 //                   <Field label="Notas">
 //                     <textarea
 //                       value={notes}
 //                       onChange={(e) => setNotes(e.target.value)}
-//                       className="w-full min-h-[120px] rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-blue-200"
+//                       className="min-h-[120px] w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 text-sm text-white outline-none focus:bg-white/[0.07] focus:ring-2 focus:ring-[#f2c94c]/10"
 //                     />
 //                   </Field>
 
@@ -1468,14 +1744,13 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 //                     <textarea
 //                       value={terms}
 //                       onChange={(e) => setTerms(e.target.value)}
-//                       className="w-full min-h-[120px] rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-blue-200"
+//                       className="min-h-[120px] w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 text-sm text-white outline-none focus:bg-white/[0.07] focus:ring-2 focus:ring-[#f2c94c]/10"
 //                     />
 //                   </Field>
 //                 </div>
 
-//                 {/* totals */}
-//                 <div className="mt-4 rounded-3xl border border-blue-200 bg-blue-50/50 p-4">
-//                   <div className="flex items-center justify-between text-sm font-semibold text-slate-700">
+//                 <div className="mt-4 rounded-3xl border border-[#f2c94c]/20 bg-[#f2c94c]/10 p-4">
+//                   <div className="flex items-center justify-between text-sm font-semibold text-slate-200">
 //                     <span className="inline-flex items-center gap-2">
 //                       <MoneyIcon />
 //                       Subtotal
@@ -1486,7 +1761,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 //                     </span>
 //                   </div>
 
-//                   <div className="mt-2 flex items-center justify-between text-xs text-slate-600">
+//                   <div className="mt-2 flex items-center justify-between text-xs text-slate-300">
 //                     <span>Descuento ({clamp(Number(discountPct || 0), 0, 100)}%)</span>
 //                     <span>
 //                       - {sym}
@@ -1494,7 +1769,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 //                     </span>
 //                   </div>
 
-//                   <div className="mt-2 flex items-center justify-between text-xs text-slate-600">
+//                   <div className="mt-2 flex items-center justify-between text-xs text-slate-300">
 //                     <span>Impuesto ({taxRatePct}%)</span>
 //                     <span>
 //                       + {sym}
@@ -1502,9 +1777,9 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 //                     </span>
 //                   </div>
 
-//                   <div className="mt-3 h-px bg-blue-200/70" />
+//                   <div className="mt-3 h-px bg-[#f2c94c]/20" />
 
-//                   <div className="mt-3 flex items-center justify-between text-sm font-black text-slate-900">
+//                   <div className="mt-3 flex items-center justify-between text-sm font-black text-white">
 //                     <span>Total</span>
 //                     <span>
 //                       {currency} {sym}
@@ -1516,12 +1791,11 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 //             </div>
 //           </div>
 
-//           {/* footer */}
-//           <div className="px-6 py-5 border-t border-slate-200 bg-white flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-end">
+//           <div className="flex flex-col gap-3 border-t border-white/10 bg-[#0b1220] px-6 py-5 sm:flex-row sm:items-center sm:justify-end">
 //             <button
 //               type="button"
 //               onClick={close}
-//               className="w-full sm:w-auto rounded-2xl bg-slate-100 px-6 py-3 text-sm font-bold text-slate-700 hover:bg-slate-200"
+//               className="w-full rounded-2xl bg-white/[0.06] px-6 py-3 text-sm font-bold text-slate-200 hover:bg-white/[0.1] sm:w-auto"
 //               disabled={saving}
 //             >
 //               Cancelar
@@ -1530,43 +1804,42 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 //             <button
 //               type="button"
 //               onClick={() => setPreviewOpen(true)}
-//               className="w-full sm:w-auto rounded-2xl bg-blue-100 px-6 py-3 text-sm font-bold text-blue-800 hover:bg-blue-200"
+//               className="w-full rounded-2xl bg-white/[0.08] px-6 py-3 text-sm font-bold text-slate-200 hover:bg-white/[0.12] sm:w-auto"
 //               disabled={!cart.length}
 //               title={!cart.length ? "Agrega servicios para previsualizar" : "Ver vista previa"}
 //             >
-//               👁 Vista Previa
+//               Vista Previa
 //             </button>
 
 //             <button
 //               type="button"
 //               onClick={saveQuote}
 //               disabled={saving || !cart.length}
-//               className="w-full sm:w-auto rounded-2xl px-6 py-3 text-sm font-black text-white disabled:opacity-60"
-//               style={{ background: "linear-gradient(135deg,#f5d36a,#f0c44a)" }}
+//               className={`${yellowBtn} w-full sm:w-auto`}
+//               style={{ background: "linear-gradient(135deg,#f2c94c,#d4a72c)" }}
 //             >
-//               {saving ? "Guardando..." : "💾 Guardar Cotización"}
+//               {saving ? "Guardando..." : "Guardar Cotización"}
 //             </button>
 //           </div>
 //         </div>
 //       </div>
 
-//       {/* Preview modal */}
 //       {previewOpen ? (
 //         <div className="fixed inset-0 z-[60]">
 //           <button
 //             type="button"
-//             className="absolute inset-0 bg-black/55"
+//             className="absolute inset-0 bg-black/75"
 //             aria-label="Cerrar preview"
 //             onClick={() => setPreviewOpen(false)}
 //           />
 
 //           <div className="absolute inset-0 flex items-center justify-center p-4 sm:p-6">
-//             <div className="w-full max-w-[920px] max-h-[90vh] rounded-3xl bg-white shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
-//               <div className="px-6 py-5 border-b border-slate-200 flex items-start justify-between gap-4">
+//             <div className="flex max-h-[90vh] w-full max-w-[920px] flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#0b1220] shadow-2xl">
+//               <div className="flex items-start justify-between gap-4 border-b border-white/10 px-6 py-5">
 //                 <div>
-//                   <div className="text-lg font-black text-slate-900">Vista Previa</div>
-//                   <div className="text-xs text-slate-500 mt-1">
-//                     Cliente: <span className="font-semibold text-slate-700">{clientName || "—"}</span>{" "}
+//                   <div className="text-lg font-black text-white">Vista Previa</div>
+//                   <div className="mt-1 text-xs text-slate-500">
+//                     Cliente: <span className="font-semibold text-slate-300">{clientName || "—"}</span>{" "}
 //                     {clientEmail ? `• ${clientEmail}` : ""}
 //                   </div>
 //                 </div>
@@ -1574,7 +1847,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 //                 <button
 //                   type="button"
 //                   onClick={() => setPreviewOpen(false)}
-//                   className="shrink-0 rounded-2xl bg-slate-100 px-3 py-2 text-slate-700 hover:bg-slate-200"
+//                   className="shrink-0 rounded-2xl bg-white/[0.06] px-3 py-2 text-slate-300 hover:bg-white/[0.1]"
 //                   aria-label="Cerrar preview"
 //                 >
 //                   <XIcon />
@@ -1582,68 +1855,95 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 //               </div>
 
 //               <div className="flex-1 overflow-auto p-6">
-//                 <div className="rounded-3xl border border-slate-200 overflow-hidden">
-//                   <div className="px-5 py-4 bg-[#f6f9fc] text-sm font-extrabold text-slate-900">
-//                     Servicios
+//                 {attachmentFile ? (
+//                   <div className="mb-5 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+//                     <div className="text-sm font-extrabold text-white">Adjunto referencial</div>
+//                     <div className="mt-3 flex items-center gap-3">
+//                       <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/[0.05] text-[#f2c94c]">
+//                         <FileIcon />
+//                       </span>
+//                       <div className="min-w-0">
+//                         <div className="truncate text-sm font-semibold text-white">
+//                           {attachmentFile.name}
+//                         </div>
+//                         <div className="text-xs text-slate-500">
+//                           {formatFileSize(attachmentFile.size)}
+//                         </div>
+//                       </div>
+//                     </div>
+//                   </div>
+//                 ) : null}
+
+//                 <div className="overflow-hidden rounded-3xl border border-white/10">
+//                   <div className="bg-white/[0.05] px-5 py-4 text-sm font-extrabold text-white">
+//                     Servicios personalizados
 //                   </div>
 
-//                   <div className="p-5 space-y-3">
+//                   <div className="space-y-3 p-5">
 //                     {cart.map((it) => (
 //                       <div
 //                         key={it.id}
-//                         className="rounded-2xl border border-slate-200 bg-white px-4 py-3 flex items-center justify-between gap-3"
+//                         className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3"
 //                       >
 //                         <div className="min-w-0">
-//                           <div className="text-sm font-extrabold text-slate-900 truncate">{it.title}</div>
+//                           <div className="truncate text-sm font-extrabold text-white">
+//                             {it.title || "Servicio sin nombre"}
+//                           </div>
 //                           <div className="text-xs text-slate-500">
-//                             Qty: {it.qty} • Unit: {sym}{Math.round(it.unit_price).toLocaleString()}
+//                             Qty: {it.qty} • Unit: {sym}
+//                             {Math.round(it.unit_price).toLocaleString()}
 //                           </div>
 //                         </div>
-//                         <div className="text-sm font-black text-slate-900">
-//                           {sym}{Math.round(it.qty * it.unit_price).toLocaleString()}
+//                         <div className="text-sm font-black text-white">
+//                           {sym}
+//                           {Math.round(it.qty * it.unit_price).toLocaleString()}
 //                         </div>
 //                       </div>
 //                     ))}
 //                   </div>
 //                 </div>
 
-//                 <div className="mt-5 rounded-3xl border border-blue-200 bg-blue-50/50 p-5">
-//                   <div className="flex items-center justify-between text-sm text-slate-700">
+//                 <div className="mt-5 rounded-3xl border border-[#f2c94c]/20 bg-[#f2c94c]/10 p-5">
+//                   <div className="flex items-center justify-between text-sm text-slate-200">
 //                     <span className="font-semibold">Subtotal</span>
 //                     <span className="font-black">
-//                       {sym}{Math.round(subtotal).toLocaleString()}
+//                       {sym}
+//                       {Math.round(subtotal).toLocaleString()}
 //                     </span>
 //                   </div>
-//                   <div className="mt-2 flex items-center justify-between text-sm text-slate-700">
+//                   <div className="mt-2 flex items-center justify-between text-sm text-slate-200">
 //                     <span className="font-semibold">Descuento</span>
 //                     <span className="font-black">
-//                       - {sym}{Math.round(discountAmount).toLocaleString()}
+//                       - {sym}
+//                       {Math.round(discountAmount).toLocaleString()}
 //                     </span>
 //                   </div>
-//                   <div className="mt-2 flex items-center justify-between text-sm text-slate-700">
+//                   <div className="mt-2 flex items-center justify-between text-sm text-slate-200">
 //                     <span className="font-semibold">Impuesto</span>
 //                     <span className="font-black">
-//                       + {sym}{Math.round(taxAmount).toLocaleString()}
+//                       + {sym}
+//                       {Math.round(taxAmount).toLocaleString()}
 //                     </span>
 //                   </div>
-//                   <div className="mt-3 h-px bg-blue-200/70" />
-//                   <div className="mt-3 flex items-center justify-between text-base text-slate-900">
+//                   <div className="mt-3 h-px bg-[#f2c94c]/20" />
+//                   <div className="mt-3 flex items-center justify-between text-base text-white">
 //                     <span className="font-black">Total</span>
 //                     <span className="font-black">
-//                       {sym}{Math.round(total).toLocaleString()}
+//                       {sym}
+//                       {Math.round(total).toLocaleString()}
 //                     </span>
 //                   </div>
-//                   <div className="mt-3 text-xs text-slate-500">
-//                     Válido hasta: <span className="font-semibold text-slate-700">{validUntil}</span>
+//                   <div className="mt-3 text-xs text-slate-400">
+//                     Válido hasta: <span className="font-semibold text-slate-200">{validUntil}</span>
 //                   </div>
 //                 </div>
 //               </div>
 
-//               <div className="px-6 py-5 border-t border-slate-200 bg-white flex flex-col sm:flex-row gap-3 sm:justify-end">
+//               <div className="flex flex-col gap-3 border-t border-white/10 bg-[#0b1220] px-6 py-5 sm:flex-row sm:justify-end">
 //                 <button
 //                   type="button"
 //                   onClick={() => setPreviewOpen(false)}
-//                   className="w-full sm:w-auto rounded-2xl bg-slate-100 px-6 py-3 text-sm font-bold text-slate-700 hover:bg-slate-200"
+//                   className="w-full rounded-2xl bg-white/[0.06] px-6 py-3 text-sm font-bold text-slate-200 hover:bg-white/[0.1] sm:w-auto"
 //                 >
 //                   Cerrar
 //                 </button>
@@ -1651,10 +1951,10 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 //                   type="button"
 //                   onClick={saveQuote}
 //                   disabled={saving}
-//                   className="w-full sm:w-auto rounded-2xl px-6 py-3 text-sm font-black text-white disabled:opacity-60"
-//                   style={{ background: "linear-gradient(135deg,#f5d36a,#f0c44a)" }}
+//                   className={`${yellowBtn} w-full sm:w-auto`}
+//                   style={{ background: "linear-gradient(135deg,#f2c94c,#d4a72c)" }}
 //                 >
-//                   {saving ? "Guardando..." : "💾 Guardar Cotización"}
+//                   {saving ? "Guardando..." : "Guardar Cotización"}
 //                 </button>
 //               </div>
 //             </div>
@@ -1665,14 +1965,12 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 //   );
 // }
 
-// /* ===================== small UI ===================== */
 // function Field({ label, children }: { label: string; children: React.ReactNode }) {
 //   return (
 //     <div className="space-y-2">
-//       <div className="text-xs font-bold text-slate-600">{label}</div>
+//       <div className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</div>
 //       {children}
 //     </div>
 //   );
 // }
-
 

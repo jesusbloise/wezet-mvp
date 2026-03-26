@@ -36,6 +36,9 @@ type QuoteRow = {
   total_amount: string | number;
   valid_until: string | null;
   public_id: string | null;
+  attachment_name?: string | null;
+  attachment_url?: string | null;
+  attachment_mime_type?: string | null;
   created_at: string;
 };
 
@@ -63,8 +66,9 @@ function normalizeStatus(s?: string | null): StatusKey {
     v === "completed" ||
     v === "paid" ||
     v === "rejected"
-  )
+  ) {
     return v;
+  }
   return "created";
 }
 
@@ -113,6 +117,34 @@ function FolderIcon() {
   );
 }
 
+function PaperclipIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-3.5 w-3.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+    >
+      <path d="M21.44 11.05l-8.49 8.49a6 6 0 0 1-8.49-8.49l9.2-9.19a4 4 0 1 1 5.66 5.65l-9.19 9.2a2 2 0 1 1-2.83-2.83l8.49-8.48" />
+    </svg>
+  );
+}
+
+function ownerProjectHref(projectId: string, tab?: TabKey) {
+  return tab
+    ? `/producer/projects/${projectId}?tab=${tab}`
+    : `/producer/projects/${projectId}`;
+}
+
+function newQuoteHref(projectId: string, returnTo: string) {
+  return `/producer/projects/${projectId}/quotes/new?returnTo=${returnTo}`;
+}
+
+function quoteDetailHref(quoteId: string) {
+  return `/producer/quotes/${quoteId}`;
+}
+
 export default function ProjectTabs({
   projectId,
   mode = "inline",
@@ -147,7 +179,7 @@ export default function ProjectTabs({
     if (onTabChange) onTabChange(next);
     else setTabInternal(next);
 
-    if (mode === "page") router.replace(`/producer/projects/${projectId}?tab=${next}`);
+    if (mode === "page") router.replace(ownerProjectHref(projectId, next));
   };
 
   useEffect(() => {
@@ -203,8 +235,8 @@ export default function ProjectTabs({
 
   const returnToQuotes =
     mode === "inline"
-      ? encodeURIComponent(`/producer/projects?open=${projectId}&tab=quotes`)
-      : encodeURIComponent(`/producer/projects/${projectId}?tab=quotes`);
+      ? encodeURIComponent(`/projects?open=${projectId}&tab=quotes`)
+      : encodeURIComponent(ownerProjectHref(projectId, "quotes"));
 
   if (!validProjectId) {
     return (
@@ -262,7 +294,7 @@ export default function ProjectTabs({
             </div>
 
             <Link
-              href={`/producer/projects/${project.id}/quotes/new?returnTo=${returnToQuotes}`}
+              href={newQuoteHref(project.id, returnToQuotes)}
               className="shrink-0 rounded-2xl px-4 py-3 text-sm font-bold text-[#0b0f17] shadow-sm hover:opacity-95 active:opacity-90"
               style={{ background: "linear-gradient(135deg,#f2c94c,#d4a72c)" }}
             >
@@ -339,7 +371,7 @@ export default function ProjectTabs({
 
               <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <MiniCountCard label="Cotizaciones" value={0} tone="green" />
-                <MiniCountCard label="Talentos" value={talentsCount} tone="yellow" />
+                <MiniCountCard label="Participantes" value={talentsCount} tone="yellow" />
                 <MiniCountCard label="NDAs" value={ndasCount} tone="violet" />
               </div>
 
@@ -361,7 +393,7 @@ export default function ProjectTabs({
               <TalentsPanel
                 projectId={project.id}
                 title="Participantes del proyecto"
-                description="Agrega creativos o empresas para colaborar"
+                description="Agrega usuarios o empresas para colaborar en este proyecto"
                 buttonLabel="+ Agregar"
                 onCountChange={(n) => setTalentsCount(n)}
               />
@@ -443,6 +475,8 @@ function QuotesTabMvp({ projectId, returnTo }: { projectId: string; returnTo: st
   const [quotes, setQuotes] = useState<QuoteRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [deletingQuoteId, setDeletingQuoteId] = useState<string | null>(null);
+  const [quoteToDelete, setQuoteToDelete] = useState<QuoteRow | null>(null);
 
   const load = async () => {
     setError(null);
@@ -464,79 +498,201 @@ function QuotesTabMvp({ projectId, returnTo }: { projectId: string; returnTo: st
     load();
   }, [projectId]);
 
+  const deleteQuote = async () => {
+    if (!quoteToDelete) return;
+
+    setDeletingQuoteId(quoteToDelete.id);
+    setError(null);
+
+    try {
+      await api(`/quotes/${quoteToDelete.id}`, { method: "DELETE" });
+      setQuoteToDelete(null);
+      await load();
+    } catch (e: any) {
+      setError(String(e?.message || e));
+    } finally {
+      setDeletingQuoteId(null);
+    }
+  };
+
   return (
-    <div className="overflow-hidden rounded-3xl border border-white/8 bg-[#0d1320]">
-      <div className="flex items-center justify-between gap-3 bg-[#111827] px-5 py-5 sm:px-6">
-        <div>
-          <div className="text-sm font-extrabold text-white">
-            Historial de cotizaciones
+    <>
+      <div className="overflow-hidden rounded-3xl border border-white/8 bg-[#0d1320]">
+        <div className="flex items-center justify-between gap-3 bg-[#111827] px-5 py-5 sm:px-6">
+          <div>
+            <div className="text-sm font-extrabold text-white">
+              Historial de cotizaciones
+            </div>
+            <div className="text-xs text-slate-500">
+              Cotizaciones asociadas a este proyecto
+            </div>
           </div>
-          <div className="text-xs text-slate-500">
-            Cotizaciones asociadas a este proyecto
-          </div>
+
+          <Link
+            href={newQuoteHref(projectId, returnTo)}
+            className="rounded-2xl px-4 py-2 text-sm font-bold text-[#0b0f17]"
+            style={{ background: "linear-gradient(135deg,#10b981,#22c55e)" }}
+          >
+            + Nueva
+          </Link>
         </div>
 
-        <Link
-          href={`/producer/projects/${projectId}/quotes/new?returnTo=${returnTo}`}
-          className="rounded-2xl px-4 py-2 text-sm font-bold text-[#0b0f17]"
-          style={{ background: "linear-gradient(135deg,#10b981,#22c55e)" }}
-        >
-          + Nueva
-        </Link>
+        <div className="px-5 py-6 sm:px-6">
+          {error ? (
+            <div className="mb-4 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+              {error}
+            </div>
+          ) : null}
+
+          {loading ? (
+            <div className="text-sm text-slate-400">Cargando...</div>
+          ) : quotes.length === 0 ? (
+            <div className="rounded-3xl border border-dashed border-white/10 bg-white/[0.02] p-10 text-center">
+              <div className="text-sm font-semibold text-slate-300">
+                No hay cotizaciones aún
+              </div>
+              <Link
+                href={newQuoteHref(projectId, returnTo)}
+                className="mt-4 inline-flex items-center justify-center rounded-2xl px-5 py-2.5 text-sm font-bold text-[#0b0f17]"
+                style={{ background: "linear-gradient(135deg,#10b981,#22c55e)" }}
+              >
+                Crear primera cotización
+              </Link>
+            </div>
+          ) : (
+            <div className="grid gap-3">
+              {quotes.map((q) => {
+                const hasAttachment = !!q.attachment_name || !!q.attachment_url;
+
+                return (
+                  <div
+                    key={q.id}
+                    className="flex flex-col gap-4 rounded-2xl border border-white/8 bg-white/[0.03] p-5 sm:flex-row sm:items-start sm:justify-between"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate font-bold text-white">
+                        {q.client_name || "Cliente sin nombre"}{" "}
+                        {q.client_email ? `• ${q.client_email}` : ""}
+                      </div>
+
+                      <div className="mt-1 text-xs text-slate-500">
+                        Estado: {q.status} • Total: {q.currency} {q.total_amount}
+                        {q.valid_until ? ` • Válido hasta: ${q.valid_until}` : ""}
+                      </div>
+
+                      {hasAttachment ? (
+                        <div className="mt-3 inline-flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-bold text-emerald-300">
+                          <PaperclipIcon />
+                          <span className="truncate">
+                            Adjunto: {q.attachment_name || "Archivo asociado"}
+                          </span>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="flex shrink-0 gap-2">
+                      <Link
+                        className="rounded-xl border border-white/8 bg-white/[0.04] px-3 py-2 text-sm text-slate-200 transition hover:bg-white/[0.08]"
+                        href={quoteDetailHref(q.id)}
+                      >
+                        Abrir
+                      </Link>
+
+                      <button
+                        type="button"
+                        onClick={() => setQuoteToDelete(q)}
+                        disabled={deletingQuoteId === q.id}
+                        className="rounded-md border border-rose-500/15 bg-rose-500/[0.08] px-1.5 py-1 text-[10px] font-medium leading-none text-rose-300 transition hover:bg-rose-500/[0.14] disabled:opacity-50"
+                      >
+                        {deletingQuoteId === q.id ? "..." : "Eliminar"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
-      <div className="px-5 py-6 sm:px-6">
-        {error ? (
-          <div className="mb-4 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
-            {error}
-          </div>
-        ) : null}
+      {quoteToDelete ? (
+        <ConfirmDeleteModal
+          title="Eliminar cotización"
+          message={`Vas a eliminar la cotización de ${
+            quoteToDelete.client_name || "este cliente"
+          }. Esta acción no se puede deshacer.`}
+          confirmLabel={deletingQuoteId === quoteToDelete.id ? "Eliminando..." : "Sí, eliminar"}
+          onCancel={() => {
+            if (deletingQuoteId) return;
+            setQuoteToDelete(null);
+          }}
+          onConfirm={deleteQuote}
+          danger
+          loading={deletingQuoteId === quoteToDelete.id}
+        />
+      ) : null}
+    </>
+  );
+}
 
-        {loading ? (
-          <div className="text-sm text-slate-400">Cargando...</div>
-        ) : quotes.length === 0 ? (
-          <div className="rounded-3xl border border-dashed border-white/10 bg-white/[0.02] p-10 text-center">
-            <div className="text-sm font-semibold text-slate-300">
-              No hay cotizaciones aún
-            </div>
-            <Link
-              href={`/producer/projects/${projectId}/quotes/new?returnTo=${returnTo}`}
-              className="mt-4 inline-flex items-center justify-center rounded-2xl px-5 py-2.5 text-sm font-bold text-[#0b0f17]"
-              style={{ background: "linear-gradient(135deg,#10b981,#22c55e)" }}
+function ConfirmDeleteModal({
+  title,
+  message,
+  confirmLabel,
+  onCancel,
+  onConfirm,
+  danger = false,
+  loading = false,
+}: {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+  danger?: boolean;
+  loading?: boolean;
+}) {
+  return (
+    <div className="fixed inset-0 z-50">
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/70 backdrop-blur-[2px]"
+        onClick={onCancel}
+        aria-label="Cerrar confirmación"
+      />
+
+      <div className="absolute inset-0 flex items-center justify-center p-4">
+        <div className="w-full max-w-[460px] overflow-hidden rounded-3xl border border-white/10 bg-[#0d1320] shadow-2xl">
+          <div className="border-b border-white/8 px-6 py-5">
+            <div className="text-lg font-black text-white">{title}</div>
+            <div className="mt-2 text-sm text-slate-400">{message}</div>
+          </div>
+
+          <div className="flex flex-col gap-3 px-6 py-5 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={loading}
+              className="rounded-2xl bg-white/[0.06] px-5 py-3 text-sm font-bold text-slate-200 transition hover:bg-white/[0.1] disabled:opacity-50"
             >
-              Crear primera cotización
-            </Link>
-          </div>
-        ) : (
-          <div className="grid gap-3">
-            {quotes.map((q) => (
-              <div
-                key={q.id}
-                className="flex flex-col gap-4 rounded-2xl border border-white/8 bg-white/[0.03] p-5 sm:flex-row sm:items-start sm:justify-between"
-              >
-                <div className="min-w-0">
-                  <div className="truncate font-bold text-white">
-                    {q.client_name || "Cliente sin nombre"}{" "}
-                    {q.client_email ? `• ${q.client_email}` : ""}
-                  </div>
-                  <div className="mt-1 text-xs text-slate-500">
-                    Estado: {q.status} • Total: {q.currency} {q.total_amount}
-                    {q.valid_until ? ` • Válido hasta: ${q.valid_until}` : ""}
-                  </div>
-                </div>
+              Cancelar
+            </button>
 
-                <div className="flex shrink-0 gap-2">
-                  <Link
-                    className="rounded-xl border border-white/8 bg-white/[0.04] px-3 py-2 text-sm text-slate-200 transition hover:bg-white/[0.08]"
-                    href={`/producer/quotes/${q.id}`}
-                  >
-                    Abrir
-                  </Link>
-                </div>
-              </div>
-            ))}
+            <button
+              type="button"
+              onClick={onConfirm}
+              disabled={loading}
+              className={[
+                "rounded-2xl px-5 py-3 text-sm font-bold transition disabled:opacity-50",
+                danger
+                  ? "bg-rose-500/90 text-white hover:bg-rose-500"
+                  : "bg-[#f2c94c] text-[#0b0f17] hover:opacity-95",
+              ].join(" ")}
+            >
+              {confirmLabel}
+            </button>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
@@ -550,6 +706,7 @@ function QuotesTabMvp({ projectId, returnTo }: { projectId: string; returnTo: st
 // import { api } from "@/lib/api";
 // import TalentsPanel from "@/components/projects/TalentsPanel";
 // import AgreementFlowModal from "@/components/projects/AgreementFlowModal";
+// import NdasPanel from "@/components/projects/NdasPanel";
 
 // function isUuid(v: string) {
 //   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
@@ -656,6 +813,20 @@ function QuotesTabMvp({ projectId, returnTo }: { projectId: string; returnTo: st
 //   );
 // }
 
+// function ownerProjectHref(projectId: string, tab?: TabKey) {
+//   return tab
+//     ? `/producer/projects/${projectId}?tab=${tab}`
+//     : `/producer/projects/${projectId}`;
+// }
+
+// function newQuoteHref(projectId: string, returnTo: string) {
+//   return `/producer/projects/${projectId}/quotes/new?returnTo=${returnTo}`;
+// }
+
+// function quoteDetailHref(quoteId: string) {
+//   return `/producer/quotes/${quoteId}`;
+// }
+
 // export default function ProjectTabs({
 //   projectId,
 //   mode = "inline",
@@ -683,13 +854,14 @@ function QuotesTabMvp({ projectId, returnTo }: { projectId: string; returnTo: st
 //   const [errProject, setErrProject] = useState<string | null>(null);
 
 //   const [talentsCount, setTalentsCount] = useState(0);
+//   const [ndasCount, setNdasCount] = useState(0);
 //   const [agreementOpen, setAgreementOpen] = useState(false);
 
 //   const setTabSafe = (next: TabKey) => {
 //     if (onTabChange) onTabChange(next);
 //     else setTabInternal(next);
 
-//     if (mode === "page") router.replace(`/producer/projects/${projectId}?tab=${next}`);
+//     if (mode === "page") router.replace(ownerProjectHref(projectId, next));
 //   };
 
 //   useEffect(() => {
@@ -745,8 +917,8 @@ function QuotesTabMvp({ projectId, returnTo }: { projectId: string; returnTo: st
 
 //   const returnToQuotes =
 //     mode === "inline"
-//       ? encodeURIComponent(`/producer/projects?open=${projectId}&tab=quotes`)
-//       : encodeURIComponent(`/producer/projects/${projectId}?tab=quotes`);
+//       ? encodeURIComponent(`/projects?open=${projectId}&tab=quotes`)
+//       : encodeURIComponent(ownerProjectHref(projectId, "quotes"));
 
 //   if (!validProjectId) {
 //     return (
@@ -804,7 +976,7 @@ function QuotesTabMvp({ projectId, returnTo }: { projectId: string; returnTo: st
 //             </div>
 
 //             <Link
-//               href={`/producer/projects/${project.id}/quotes/new?returnTo=${returnToQuotes}`}
+//               href={newQuoteHref(project.id, returnToQuotes)}
 //               className="shrink-0 rounded-2xl px-4 py-3 text-sm font-bold text-[#0b0f17] shadow-sm hover:opacity-95 active:opacity-90"
 //               style={{ background: "linear-gradient(135deg,#f2c94c,#d4a72c)" }}
 //             >
@@ -873,6 +1045,7 @@ function QuotesTabMvp({ projectId, returnTo }: { projectId: string; returnTo: st
 //                   type="button"
 //                   className="rounded-2xl px-4 py-2 text-sm font-bold text-[#0b0f17]"
 //                   style={{ background: "linear-gradient(135deg,#a855f7,#6366f1)" }}
+//                   onClick={() => setTabSafe("ndas")}
 //                 >
 //                   NDA
 //                 </button>
@@ -880,8 +1053,8 @@ function QuotesTabMvp({ projectId, returnTo }: { projectId: string; returnTo: st
 
 //               <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
 //                 <MiniCountCard label="Cotizaciones" value={0} tone="green" />
-//                 <MiniCountCard label="Talentos" value={talentsCount} tone="yellow" />
-//                 <MiniCountCard label="NDAs" value={0} tone="violet" />
+//                 <MiniCountCard label="Participantes" value={talentsCount} tone="yellow" />
+//                 <MiniCountCard label="NDAs" value={ndasCount} tone="violet" />
 //               </div>
 
 //               <div className="mt-6">
@@ -902,14 +1075,17 @@ function QuotesTabMvp({ projectId, returnTo }: { projectId: string; returnTo: st
 //               <TalentsPanel
 //                 projectId={project.id}
 //                 title="Participantes del proyecto"
-//                 description="Agrega creativos o empresas para colaborar"
+//                 description="Agrega usuarios o empresas para colaborar en este proyecto"
 //                 buttonLabel="+ Agregar"
 //                 onCountChange={(n) => setTalentsCount(n)}
 //               />
 //             </div>
 //           ) : (
-//             <div className="mt-4 rounded-3xl border border-white/8 bg-white/[0.03] p-6 text-sm text-slate-400">
-//               Sección "NDAs" pendiente de conectar.
+//             <div className="mt-4">
+//               <NdasPanel
+//                 projectId={project.id}
+//                 onCountChange={(n) => setNdasCount(n)}
+//               />
 //             </div>
 //           )}
 //         </div>
@@ -981,6 +1157,8 @@ function QuotesTabMvp({ projectId, returnTo }: { projectId: string; returnTo: st
 //   const [quotes, setQuotes] = useState<QuoteRow[]>([]);
 //   const [error, setError] = useState<string | null>(null);
 //   const [loading, setLoading] = useState(true);
+//   const [deletingQuoteId, setDeletingQuoteId] = useState<string | null>(null);
+//   const [quoteToDelete, setQuoteToDelete] = useState<QuoteRow | null>(null);
 
 //   const load = async () => {
 //     setError(null);
@@ -1002,79 +1180,187 @@ function QuotesTabMvp({ projectId, returnTo }: { projectId: string; returnTo: st
 //     load();
 //   }, [projectId]);
 
+//   const deleteQuote = async () => {
+//     if (!quoteToDelete) return;
+
+//     setDeletingQuoteId(quoteToDelete.id);
+//     setError(null);
+
+//     try {
+//       await api(`/quotes/${quoteToDelete.id}`, { method: "DELETE" });
+//       setQuoteToDelete(null);
+//       await load();
+//     } catch (e: any) {
+//       setError(String(e?.message || e));
+//     } finally {
+//       setDeletingQuoteId(null);
+//     }
+//   };
+
 //   return (
-//     <div className="overflow-hidden rounded-3xl border border-white/8 bg-[#0d1320]">
-//       <div className="flex items-center justify-between gap-3 bg-[#111827] px-5 py-5 sm:px-6">
-//         <div>
-//           <div className="text-sm font-extrabold text-white">
-//             Historial de cotizaciones
+//     <>
+//       <div className="overflow-hidden rounded-3xl border border-white/8 bg-[#0d1320]">
+//         <div className="flex items-center justify-between gap-3 bg-[#111827] px-5 py-5 sm:px-6">
+//           <div>
+//             <div className="text-sm font-extrabold text-white">
+//               Historial de cotizaciones
+//             </div>
+//             <div className="text-xs text-slate-500">
+//               Cotizaciones asociadas a este proyecto
+//             </div>
 //           </div>
-//           <div className="text-xs text-slate-500">
-//             Cotizaciones asociadas a este proyecto
-//           </div>
+
+//           <Link
+//             href={newQuoteHref(projectId, returnTo)}
+//             className="rounded-2xl px-4 py-2 text-sm font-bold text-[#0b0f17]"
+//             style={{ background: "linear-gradient(135deg,#10b981,#22c55e)" }}
+//           >
+//             + Nueva
+//           </Link>
 //         </div>
 
-//         <Link
-//           href={`/producer/projects/${projectId}/quotes/new?returnTo=${returnTo}`}
-//           className="rounded-2xl px-4 py-2 text-sm font-bold text-[#0b0f17]"
-//           style={{ background: "linear-gradient(135deg,#10b981,#22c55e)" }}
-//         >
-//           + Nueva
-//         </Link>
+//         <div className="px-5 py-6 sm:px-6">
+//           {error ? (
+//             <div className="mb-4 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+//               {error}
+//             </div>
+//           ) : null}
+
+//           {loading ? (
+//             <div className="text-sm text-slate-400">Cargando...</div>
+//           ) : quotes.length === 0 ? (
+//             <div className="rounded-3xl border border-dashed border-white/10 bg-white/[0.02] p-10 text-center">
+//               <div className="text-sm font-semibold text-slate-300">
+//                 No hay cotizaciones aún
+//               </div>
+//               <Link
+//                 href={newQuoteHref(projectId, returnTo)}
+//                 className="mt-4 inline-flex items-center justify-center rounded-2xl px-5 py-2.5 text-sm font-bold text-[#0b0f17]"
+//                 style={{ background: "linear-gradient(135deg,#10b981,#22c55e)" }}
+//               >
+//                 Crear primera cotización
+//               </Link>
+//             </div>
+//           ) : (
+//             <div className="grid gap-3">
+//               {quotes.map((q) => (
+//                 <div
+//                   key={q.id}
+//                   className="flex flex-col gap-4 rounded-2xl border border-white/8 bg-white/[0.03] p-5 sm:flex-row sm:items-start sm:justify-between"
+//                 >
+//                   <div className="min-w-0">
+//                     <div className="truncate font-bold text-white">
+//                       {q.client_name || "Cliente sin nombre"}{" "}
+//                       {q.client_email ? `• ${q.client_email}` : ""}
+//                     </div>
+//                     <div className="mt-1 text-xs text-slate-500">
+//                       Estado: {q.status} • Total: {q.currency} {q.total_amount}
+//                       {q.valid_until ? ` • Válido hasta: ${q.valid_until}` : ""}
+//                     </div>
+//                   </div>
+
+//                   <div className="flex shrink-0 gap-2">
+//                     <Link
+//                       className="rounded-xl border border-white/8 bg-white/[0.04] px-3 py-2 text-sm text-slate-200 transition hover:bg-white/[0.08]"
+//                       href={quoteDetailHref(q.id)}
+//                     >
+//                       Abrir
+//                     </Link>
+
+// <button
+//   type="button"
+//   onClick={() => setQuoteToDelete(q)}
+//   disabled={deletingQuoteId === q.id}
+//   className="rounded-md border border-rose-500/15 bg-rose-500/[0.08] px-1.5 py-1 text-[10px] font-medium leading-none text-rose-300 transition hover:bg-rose-500/[0.14] disabled:opacity-50"
+// >
+//   {deletingQuoteId === q.id ? "..." : "Eliminar"}
+// </button>
+//                   </div>
+//                 </div>
+//               ))}
+//             </div>
+//           )}
+//         </div>
 //       </div>
 
-//       <div className="px-5 py-6 sm:px-6">
-//         {error ? (
-//           <div className="mb-4 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
-//             {error}
-//           </div>
-//         ) : null}
+//       {quoteToDelete ? (
+//         <ConfirmDeleteModal
+//           title="Eliminar cotización"
+//           message={`Vas a eliminar la cotización de ${
+//             quoteToDelete.client_name || "este cliente"
+//           }. Esta acción no se puede deshacer.`}
+//           confirmLabel={deletingQuoteId === quoteToDelete.id ? "Eliminando..." : "Sí, eliminar"}
+//           onCancel={() => {
+//             if (deletingQuoteId) return;
+//             setQuoteToDelete(null);
+//           }}
+//           onConfirm={deleteQuote}
+//           danger
+//           loading={deletingQuoteId === quoteToDelete.id}
+//         />
+//       ) : null}
+//     </>
+//   );
+// }
 
-//         {loading ? (
-//           <div className="text-sm text-slate-400">Cargando...</div>
-//         ) : quotes.length === 0 ? (
-//           <div className="rounded-3xl border border-dashed border-white/10 bg-white/[0.02] p-10 text-center">
-//             <div className="text-sm font-semibold text-slate-300">
-//               No hay cotizaciones aún
-//             </div>
-//             <Link
-//               href={`/producer/projects/${projectId}/quotes/new?returnTo=${returnTo}`}
-//               className="mt-4 inline-flex items-center justify-center rounded-2xl px-5 py-2.5 text-sm font-bold text-[#0b0f17]"
-//               style={{ background: "linear-gradient(135deg,#10b981,#22c55e)" }}
+// function ConfirmDeleteModal({
+//   title,
+//   message,
+//   confirmLabel,
+//   onCancel,
+//   onConfirm,
+//   danger = false,
+//   loading = false,
+// }: {
+//   title: string;
+//   message: string;
+//   confirmLabel: string;
+//   onCancel: () => void;
+//   onConfirm: () => void;
+//   danger?: boolean;
+//   loading?: boolean;
+// }) {
+//   return (
+//     <div className="fixed inset-0 z-50">
+//       <button
+//         type="button"
+//         className="absolute inset-0 bg-black/70 backdrop-blur-[2px]"
+//         onClick={onCancel}
+//         aria-label="Cerrar confirmación"
+//       />
+
+//       <div className="absolute inset-0 flex items-center justify-center p-4">
+//         <div className="w-full max-w-[460px] overflow-hidden rounded-3xl border border-white/10 bg-[#0d1320] shadow-2xl">
+//           <div className="border-b border-white/8 px-6 py-5">
+//             <div className="text-lg font-black text-white">{title}</div>
+//             <div className="mt-2 text-sm text-slate-400">{message}</div>
+//           </div>
+
+//           <div className="flex flex-col gap-3 px-6 py-5 sm:flex-row sm:justify-end">
+//             <button
+//               type="button"
+//               onClick={onCancel}
+//               disabled={loading}
+//               className="rounded-2xl bg-white/[0.06] px-5 py-3 text-sm font-bold text-slate-200 transition hover:bg-white/[0.1] disabled:opacity-50"
 //             >
-//               Crear primera cotización
-//             </Link>
-//           </div>
-//         ) : (
-//           <div className="grid gap-3">
-//             {quotes.map((q) => (
-//               <div
-//                 key={q.id}
-//                 className="flex flex-col gap-4 rounded-2xl border border-white/8 bg-white/[0.03] p-5 sm:flex-row sm:items-start sm:justify-between"
-//               >
-//                 <div className="min-w-0">
-//                   <div className="truncate font-bold text-white">
-//                     {q.client_name || "Cliente sin nombre"}{" "}
-//                     {q.client_email ? `• ${q.client_email}` : ""}
-//                   </div>
-//                   <div className="mt-1 text-xs text-slate-500">
-//                     Estado: {q.status} • Total: {q.currency} {q.total_amount}
-//                     {q.valid_until ? ` • Válido hasta: ${q.valid_until}` : ""}
-//                   </div>
-//                 </div>
+//               Cancelar
+//             </button>
 
-//                 <div className="flex shrink-0 gap-2">
-//                   <Link
-//                     className="rounded-xl border border-white/8 bg-white/[0.04] px-3 py-2 text-sm text-slate-200 transition hover:bg-white/[0.08]"
-//                     href={`/producer/quotes/${q.id}`}
-//                   >
-//                     Abrir
-//                   </Link>
-//                 </div>
-//               </div>
-//             ))}
+//             <button
+//               type="button"
+//               onClick={onConfirm}
+//               disabled={loading}
+//               className={[
+//                 "rounded-2xl px-5 py-3 text-sm font-bold transition disabled:opacity-50",
+//                 danger
+//                   ? "bg-rose-500/90 text-white hover:bg-rose-500"
+//                   : "bg-[#f2c94c] text-[#0b0f17] hover:opacity-95",
+//               ].join(" ")}
+//             >
+//               {confirmLabel}
+//             </button>
 //           </div>
-//         )}
+//         </div>
 //       </div>
 //     </div>
 //   );

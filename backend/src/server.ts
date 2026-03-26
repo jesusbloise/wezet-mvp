@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import path from "path";
 
 import pool from "./db/pool";
 import authRoutes from "./routes/auth";
@@ -41,6 +42,8 @@ app.use(
     credentials: true,
   })
 );
+
+app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
 
 app.get("/", (_req, res) => {
   res.send("WEZET API OK. Use /health");
@@ -89,10 +92,9 @@ app.listen(port, () => {
 // import contactsRoutes from "./routes/contacts";
 // import meRoutes from "./routes/me";
 // import teamRoutes from "./routes/team";
+// import aiRoutes from "./routes/ai";
+// import ndasRoutes from "./routes/ndas";
 
-
-
-// // ✅ FIX: requireAuth NO es default export
 // import { requireAuth } from "./middlewares/requireAuth";
 
 // const app = express();
@@ -100,7 +102,6 @@ app.listen(port, () => {
 // app.use(express.json());
 // app.use(cookieParser());
 
-// // ✅ CORS PRO: permite varios orígenes
 // const allowedOrigins = [
 //   "http://localhost:3000",
 //   "http://localhost:3001",
@@ -119,12 +120,10 @@ app.listen(port, () => {
 //   })
 // );
 
-// // Opcional: para que al entrar a http://localhost:4000 no salga "Cannot GET /"
 // app.get("/", (_req, res) => {
 //   res.send("WEZET API OK. Use /health");
 // });
 
-// // Healthcheck
 // app.get("/health", async (_req, res) => {
 //   try {
 //     const r = await pool.query("select 1 as ok");
@@ -134,7 +133,6 @@ app.listen(port, () => {
 //   }
 // });
 
-// // Rutas
 // app.use("/auth", authRoutes);
 // app.use("/projects", projectsRoutes);
 // app.use("/negotiations", negotiationsRoutes);
@@ -144,9 +142,9 @@ app.listen(port, () => {
 // app.use("/api/dashboard", dashboardRoutes);
 // app.use("/me", meRoutes);
 // app.use("/team", teamRoutes);
-
-// // ✅ Contacts (protegido)
 // app.use("/contacts", requireAuth, contactsRoutes);
+// app.use("/ai", aiRoutes);
+// app.use("/ndas", ndasRoutes);
 
 // const port = Number(process.env.PORT) || 4000;
 // app.listen(port, () => {

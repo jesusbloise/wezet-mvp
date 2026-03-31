@@ -52,6 +52,14 @@ type StatusKey =
   | "paid"
   | "rejected";
 
+type UpdateProjectPayload = {
+  title?: string;
+  brief?: string;
+  currency?: string;
+  start_date?: string;
+  due_date?: string;
+};
+
 function normalizeStatus(s?: string | null): StatusKey {
   if (!s) return "created";
   const v = String(s).toLowerCase();
@@ -175,11 +183,42 @@ export default function ProjectTabs({
   const [ndasCount, setNdasCount] = useState(0);
   const [agreementOpen, setAgreementOpen] = useState(false);
 
+  const [editOpen, setEditOpen] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const [editTitle, setEditTitle] = useState("");
+  const [editBrief, setEditBrief] = useState("");
+  const [editCurrency, setEditCurrency] = useState("CLP");
+  const [editStartDate, setEditStartDate] = useState("");
+  const [editDueDate, setEditDueDate] = useState("");
+
   const setTabSafe = (next: TabKey) => {
     if (onTabChange) onTabChange(next);
     else setTabInternal(next);
 
     if (mode === "page") router.replace(ownerProjectHref(projectId, next));
+  };
+
+  const loadProject = async () => {
+    if (!validProjectId) {
+      setLoadingProject(false);
+      setProject(null);
+      setErrProject("Invalid project id");
+      return;
+    }
+
+    setLoadingProject(true);
+    setErrProject(null);
+
+    try {
+      const r = await api<{ ok: true; project: Project }>(`/projects/${projectId}`);
+      setProject(r.project);
+    } catch (e: any) {
+      setErrProject(String(e?.message || e));
+    } finally {
+      setLoadingProject(false);
+    }
   };
 
   useEffect(() => {
@@ -199,6 +238,8 @@ export default function ProjectTabs({
   }, [initialTab, controlledTab]);
 
   useEffect(() => {
+    let alive = true;
+
     if (!validProjectId) {
       setLoadingProject(false);
       setProject(null);
@@ -206,7 +247,6 @@ export default function ProjectTabs({
       return;
     }
 
-    let alive = true;
     setLoadingProject(true);
     setErrProject(null);
 
@@ -226,6 +266,61 @@ export default function ProjectTabs({
       alive = false;
     };
   }, [projectId, validProjectId]);
+
+  useEffect(() => {
+    if (!project) return;
+    setEditTitle(project.title || "");
+    setEditBrief(project.brief || "");
+    setEditCurrency(project.currency || "CLP");
+    setEditStartDate(project.start_date || "");
+    setEditDueDate(project.due_date || "");
+  }, [project]);
+
+  const openEditModal = () => {
+    if (!project) return;
+    setEditError(null);
+    setEditTitle(project.title || "");
+    setEditBrief(project.brief || "");
+    setEditCurrency(project.currency || "CLP");
+    setEditStartDate(project.start_date || "");
+    setEditDueDate(project.due_date || "");
+    setEditOpen(true);
+  };
+
+  const saveProjectEdit = async () => {
+    if (!project || editSaving) return;
+
+    const title = editTitle.trim();
+    if (title.length < 2) {
+      setEditError("El título debe tener al menos 2 caracteres.");
+      return;
+    }
+
+    setEditSaving(true);
+    setEditError(null);
+
+    try {
+      const payload: UpdateProjectPayload = {
+        title,
+        brief: editBrief.trim() || "",
+        currency: editCurrency || "CLP",
+        start_date: editStartDate || "",
+        due_date: editDueDate || "",
+      };
+
+      const r = await api<{ ok: true; project: Project }>(`/projects/${project.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+
+      setProject(r.project);
+      setEditOpen(false);
+    } catch (e: any) {
+      setEditError(String(e?.message || e));
+    } finally {
+      setEditSaving(false);
+    }
+  };
 
   const created = project?.created_at
     ? new Date(project.created_at).toLocaleDateString()
@@ -293,13 +388,23 @@ export default function ProjectTabs({
               </div>
             </div>
 
-            <Link
-              href={newQuoteHref(project.id, returnToQuotes)}
-              className="shrink-0 rounded-2xl px-4 py-3 text-sm font-bold text-[#0b0f17] shadow-sm hover:opacity-95 active:opacity-90"
-              style={{ background: "linear-gradient(135deg,#f2c94c,#d4a72c)" }}
-            >
-              Nueva cotización
-            </Link>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={openEditModal}
+                className="rounded-xl border border-white/8 bg-white/[0.04] px-3 py-2 text-xs font-bold text-slate-200 transition hover:bg-white/[0.08]"
+              >
+                Editar proyecto
+              </button>
+
+              <Link
+                href={newQuoteHref(project.id, returnToQuotes)}
+                className="rounded-2xl px-4 py-3 text-sm font-bold text-[#0b0f17] shadow-sm hover:opacity-95 active:opacity-90"
+                style={{ background: "linear-gradient(135deg,#f2c94c,#d4a72c)" }}
+              >
+                Nueva cotización
+              </Link>
+            </div>
           </div>
         ) : null}
 
@@ -375,6 +480,27 @@ export default function ProjectTabs({
                 <MiniCountCard label="NDAs" value={ndasCount} tone="violet" />
               </div>
 
+              <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <InfoCard label="Moneda" value={project.currency || "CLP"} />
+                <InfoCard
+                  label="Inicio"
+                  value={
+                    project.start_date
+                      ? new Date(project.start_date).toLocaleDateString()
+                      : "No definido"
+                  }
+                />
+                <InfoCard
+                  label="Entrega"
+                  value={
+                    project.due_date
+                      ? new Date(project.due_date).toLocaleDateString()
+                      : "No definida"
+                  }
+                />
+                <InfoCard label="Estado" value={pill.label} />
+              </div>
+
               <div className="mt-6">
                 <div className="font-ui text-[11px] uppercase tracking-[0.18em] text-slate-500">
                   descripción
@@ -418,6 +544,28 @@ export default function ProjectTabs({
           setTabSafe("talents");
         }}
       />
+
+      {editOpen ? (
+        <EditProjectModal
+          title={editTitle}
+          setTitle={setEditTitle}
+          brief={editBrief}
+          setBrief={setEditBrief}
+          currency={editCurrency}
+          setCurrency={setEditCurrency}
+          startDate={editStartDate}
+          setStartDate={setEditStartDate}
+          dueDate={editDueDate}
+          setDueDate={setEditDueDate}
+          error={editError}
+          saving={editSaving}
+          onCancel={() => {
+            if (editSaving) return;
+            setEditOpen(false);
+          }}
+          onSave={saveProjectEdit}
+        />
+      ) : null}
     </>
   );
 }
@@ -467,6 +615,15 @@ function MiniCountCard({
     <div className={["rounded-2xl p-6 text-center", style].join(" ")}>
       <div className="text-2xl font-black">{value}</div>
       <div className="mt-1 text-xs font-semibold">{label}</div>
+    </div>
+  );
+}
+
+function InfoCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+      <div className="text-xs font-bold text-slate-400">{label}</div>
+      <div className="mt-2 text-sm font-semibold text-white">{value}</div>
     </div>
   );
 }
@@ -698,6 +855,158 @@ function ConfirmDeleteModal({
   );
 }
 
+function EditProjectModal({
+  title,
+  setTitle,
+  brief,
+  setBrief,
+  currency,
+  setCurrency,
+  startDate,
+  setStartDate,
+  dueDate,
+  setDueDate,
+  error,
+  saving,
+  onCancel,
+  onSave,
+}: {
+  title: string;
+  setTitle: (v: string) => void;
+  brief: string;
+  setBrief: (v: string) => void;
+  currency: string;
+  setCurrency: (v: string) => void;
+  startDate: string;
+  setStartDate: (v: string) => void;
+  dueDate: string;
+  setDueDate: (v: string) => void;
+  error: string | null;
+  saving: boolean;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50">
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/70 backdrop-blur-[2px]"
+        onClick={onCancel}
+        aria-label="Cerrar edición"
+      />
+
+      <div className="absolute inset-0 flex items-center justify-center p-4">
+        <div className="w-full max-w-[720px] overflow-hidden rounded-3xl border border-white/10 bg-[#0d1320] shadow-2xl">
+          <div className="border-b border-white/8 px-6 py-5">
+            <div className="text-lg font-black text-white">Editar proyecto</div>
+            <div className="mt-1 text-sm text-slate-400">
+              Modifica los datos principales del proyecto.
+            </div>
+          </div>
+
+          <div className="px-6 py-5">
+            {error ? (
+              <div className="mb-4 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+                {error}
+              </div>
+            ) : null}
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label="Título">
+                <input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="w-full rounded-2xl border border-white/8 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition focus:border-[#f2c94c]/30 focus:ring-2 focus:ring-[#f2c94c]/10"
+                  placeholder="Nombre del proyecto"
+                />
+              </Field>
+
+              <Field label="Moneda">
+                <select
+                  value={currency}
+                  onChange={(e) => setCurrency(e.target.value)}
+                  className="w-full rounded-2xl border border-white/8 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition focus:border-[#f2c94c]/30 focus:ring-2 focus:ring-[#f2c94c]/10"
+                >
+                  <option value="CLP">CLP</option>
+                  <option value="USD">USD</option>
+                  <option value="EUR">EUR</option>
+                </select>
+              </Field>
+
+              <Field label="Fecha inicio">
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="w-full rounded-2xl border border-white/8 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition focus:border-[#f2c94c]/30 focus:ring-2 focus:ring-[#f2c94c]/10"
+                />
+              </Field>
+
+              <Field label="Fecha entrega">
+                <input
+                  type="date"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                  className="w-full rounded-2xl border border-white/8 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition focus:border-[#f2c94c]/30 focus:ring-2 focus:ring-[#f2c94c]/10"
+                />
+              </Field>
+            </div>
+
+            <div className="mt-4">
+              <Field label="Descripción">
+                <textarea
+                  value={brief}
+                  onChange={(e) => setBrief(e.target.value)}
+                  className="min-h-[140px] w-full rounded-2xl border border-white/8 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition focus:border-[#f2c94c]/30 focus:ring-2 focus:ring-[#f2c94c]/10"
+                  placeholder="Describe el proyecto..."
+                />
+              </Field>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3 border-t border-white/8 px-6 py-5 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={saving}
+              className="rounded-2xl bg-white/[0.06] px-5 py-3 text-sm font-bold text-slate-200 transition hover:bg-white/[0.1] disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={saving}
+              className="rounded-2xl px-5 py-3 text-sm font-bold text-[#0b0f17] transition hover:opacity-95 disabled:opacity-60"
+              style={{ background: "linear-gradient(135deg,#f2c94c,#d4a72c)" }}
+            >
+              {saving ? "Guardando..." : "Guardar cambios"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+        {label}
+      </div>
+      {children}
+    </div>
+  );
+}
+
 // "use client";
 
 // import Link from "next/link";
@@ -736,6 +1045,9 @@ function ConfirmDeleteModal({
 //   total_amount: string | number;
 //   valid_until: string | null;
 //   public_id: string | null;
+//   attachment_name?: string | null;
+//   attachment_url?: string | null;
+//   attachment_mime_type?: string | null;
 //   created_at: string;
 // };
 
@@ -763,8 +1075,9 @@ function ConfirmDeleteModal({
 //     v === "completed" ||
 //     v === "paid" ||
 //     v === "rejected"
-//   )
+//   ) {
 //     return v;
+//   }
 //   return "created";
 // }
 
@@ -809,6 +1122,20 @@ function ConfirmDeleteModal({
 //       strokeWidth="2.2"
 //     >
 //       <path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
+//     </svg>
+//   );
+// }
+
+// function PaperclipIcon() {
+//   return (
+//     <svg
+//       viewBox="0 0 24 24"
+//       className="h-3.5 w-3.5"
+//       fill="none"
+//       stroke="currentColor"
+//       strokeWidth="2.2"
+//     >
+//       <path d="M21.44 11.05l-8.49 8.49a6 6 0 0 1-8.49-8.49l9.2-9.19a4 4 0 1 1 5.66 5.65l-9.19 9.2a2 2 0 1 1-2.83-2.83l8.49-8.48" />
 //     </svg>
 //   );
 // }
@@ -1243,41 +1570,55 @@ function ConfirmDeleteModal({
 //             </div>
 //           ) : (
 //             <div className="grid gap-3">
-//               {quotes.map((q) => (
-//                 <div
-//                   key={q.id}
-//                   className="flex flex-col gap-4 rounded-2xl border border-white/8 bg-white/[0.03] p-5 sm:flex-row sm:items-start sm:justify-between"
-//                 >
-//                   <div className="min-w-0">
-//                     <div className="truncate font-bold text-white">
-//                       {q.client_name || "Cliente sin nombre"}{" "}
-//                       {q.client_email ? `• ${q.client_email}` : ""}
+//               {quotes.map((q) => {
+//                 const hasAttachment = !!q.attachment_name || !!q.attachment_url;
+
+//                 return (
+//                   <div
+//                     key={q.id}
+//                     className="flex flex-col gap-4 rounded-2xl border border-white/8 bg-white/[0.03] p-5 sm:flex-row sm:items-start sm:justify-between"
+//                   >
+//                     <div className="min-w-0">
+//                       <div className="truncate font-bold text-white">
+//                         {q.client_name || "Cliente sin nombre"}{" "}
+//                         {q.client_email ? `• ${q.client_email}` : ""}
+//                       </div>
+
+//                       <div className="mt-1 text-xs text-slate-500">
+//                         Estado: {q.status} • Total: {q.currency} {q.total_amount}
+//                         {q.valid_until ? ` • Válido hasta: ${q.valid_until}` : ""}
+//                       </div>
+
+//                       {hasAttachment ? (
+//                         <div className="mt-3 inline-flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-bold text-emerald-300">
+//                           <PaperclipIcon />
+//                           <span className="truncate">
+//                             Adjunto: {q.attachment_name || "Archivo asociado"}
+//                           </span>
+//                         </div>
+//                       ) : null}
 //                     </div>
-//                     <div className="mt-1 text-xs text-slate-500">
-//                       Estado: {q.status} • Total: {q.currency} {q.total_amount}
-//                       {q.valid_until ? ` • Válido hasta: ${q.valid_until}` : ""}
+
+//                     <div className="flex shrink-0 gap-2">
+//                       <Link
+//                         className="rounded-xl border border-white/8 bg-white/[0.04] px-3 py-2 text-sm text-slate-200 transition hover:bg-white/[0.08]"
+//                         href={quoteDetailHref(q.id)}
+//                       >
+//                         Abrir
+//                       </Link>
+
+//                       <button
+//                         type="button"
+//                         onClick={() => setQuoteToDelete(q)}
+//                         disabled={deletingQuoteId === q.id}
+//                         className="rounded-md border border-rose-500/15 bg-rose-500/[0.08] px-1.5 py-1 text-[10px] font-medium leading-none text-rose-300 transition hover:bg-rose-500/[0.14] disabled:opacity-50"
+//                       >
+//                         {deletingQuoteId === q.id ? "..." : "Eliminar"}
+//                       </button>
 //                     </div>
 //                   </div>
-
-//                   <div className="flex shrink-0 gap-2">
-//                     <Link
-//                       className="rounded-xl border border-white/8 bg-white/[0.04] px-3 py-2 text-sm text-slate-200 transition hover:bg-white/[0.08]"
-//                       href={quoteDetailHref(q.id)}
-//                     >
-//                       Abrir
-//                     </Link>
-
-// <button
-//   type="button"
-//   onClick={() => setQuoteToDelete(q)}
-//   disabled={deletingQuoteId === q.id}
-//   className="rounded-md border border-rose-500/15 bg-rose-500/[0.08] px-1.5 py-1 text-[10px] font-medium leading-none text-rose-300 transition hover:bg-rose-500/[0.14] disabled:opacity-50"
-// >
-//   {deletingQuoteId === q.id ? "..." : "Eliminar"}
-// </button>
-//                   </div>
-//                 </div>
-//               ))}
+//                 );
+//               })}
 //             </div>
 //           )}
 //         </div>

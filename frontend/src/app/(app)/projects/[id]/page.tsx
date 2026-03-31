@@ -53,6 +53,35 @@ function accessLabel(type?: string) {
   return "Proyecto";
 }
 
+function infoValueDate(v?: string | null) {
+  if (!v) return "No definido";
+  return new Date(v).toLocaleDateString();
+}
+
+function infoValueText(v?: string | null, fallback = "No definido") {
+  return v || fallback;
+}
+
+function statusLabel(v?: string | null) {
+  if (!v) return "Draft";
+  const s = String(v).toLowerCase();
+  if (s === "draft") return "Creado";
+  if (s === "open") return "Abierto";
+  if (s === "pending") return "Pendiente";
+  if (s === "accepted") return "Aceptado";
+  if (s === "rejected") return "Rechazado";
+  return v;
+}
+
+function InfoCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+      <div className="text-xs font-bold text-slate-400">{label}</div>
+      <div className="mt-2 text-sm font-semibold text-white">{value}</div>
+    </div>
+  );
+}
+
 export default function SharedProjectDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params?.id || "";
@@ -260,37 +289,32 @@ export default function SharedProjectDetailPage() {
               </div>
 
               <div className="space-y-4">
-                <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-                  <div className="text-xs font-bold text-slate-400">Inicio</div>
-                  <div className="mt-2 text-sm font-semibold text-white">
-                    {project.start_date
-                      ? new Date(project.start_date).toLocaleDateString()
-                      : "No definido"}
-                  </div>
-                </div>
+                <InfoCard label="Moneda" value={infoValueText(project.currency, "CLP")} />
 
-                <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-                  <div className="text-xs font-bold text-slate-400">Entrega</div>
-                  <div className="mt-2 text-sm font-semibold text-white">
-                    {project.due_date
-                      ? new Date(project.due_date).toLocaleDateString()
-                      : "No definida"}
-                  </div>
-                </div>
+                <InfoCard
+                  label="Inicio"
+                  value={project.start_date ? infoValueDate(project.start_date) : "No definido"}
+                />
 
-                <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-                  <div className="text-xs font-bold text-slate-400">Participación</div>
-                  <div className="mt-2 text-sm font-semibold text-white">
-                    {accessLabel(access?.type)}
-                  </div>
-                </div>
+                <InfoCard
+                  label="Entrega"
+                  value={project.due_date ? infoValueDate(project.due_date) : "No definida"}
+                />
 
-                <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-                  <div className="text-xs font-bold text-slate-400">Negociación</div>
-                  <div className="mt-2 text-sm font-semibold text-white">
-                    {canOpenNegotiation ? "Disponible" : "Pendiente"}
-                  </div>
-                </div>
+                <InfoCard
+                  label="Estado"
+                  value={statusLabel(project.status)}
+                />
+
+                <InfoCard
+                  label="Participación"
+                  value={accessLabel(access?.type)}
+                />
+
+                <InfoCard
+                  label="Negociación"
+                  value={canOpenNegotiation ? "Disponible" : "Pendiente"}
+                />
               </div>
             </div>
           </div>
@@ -303,7 +327,6 @@ export default function SharedProjectDetailPage() {
     </div>
   );
 }
-
 // "use client";
 
 // import Link from "next/link";
@@ -437,7 +460,12 @@ export default function SharedProjectDetailPage() {
 
 //   if (!project) return null;
 
-//   const canOpenNegotiation = !!collaboration?.can_open_negotiation && !!collaboration?.negotiation_id;
+//   const canOpenNegotiation =
+//     !!collaboration?.can_open_negotiation && !!collaboration?.negotiation_id;
+
+//   const negotiationHref = canOpenNegotiation
+//     ? `/producer/negotiations/${collaboration?.negotiation_id}`
+//     : null;
 
 //   return (
 //     <div className="w-full">
@@ -480,9 +508,9 @@ export default function SharedProjectDetailPage() {
 //               </div>
 
 //               <div className="flex flex-wrap gap-2">
-//                 {canOpenNegotiation ? (
+//                 {negotiationHref ? (
 //                   <Link
-//                     href={`/producer/negotiations/${collaboration!.negotiation_id}`}
+//                     href={negotiationHref}
 //                     className="inline-flex shrink-0 items-center justify-center rounded-2xl px-4 py-3 text-sm font-bold text-[#0b0f17] transition hover:opacity-95"
 //                     style={{ background: "linear-gradient(135deg,#f2c94c,#d4a72c)" }}
 //                   >
@@ -527,7 +555,7 @@ export default function SharedProjectDetailPage() {
 //                   </div>
 
 //                   <div className="mt-2 rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-//                     {canOpenNegotiation ? (
+//                     {negotiationHref ? (
 //                       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 //                         <div className="min-w-0">
 //                           <div className="text-sm font-bold text-white">
@@ -539,7 +567,7 @@ export default function SharedProjectDetailPage() {
 //                         </div>
 
 //                         <Link
-//                           href={`/producer/negotiations/${collaboration!.negotiation_id}`}
+//                           href={negotiationHref}
 //                           className="inline-flex shrink-0 items-center justify-center rounded-2xl px-4 py-3 text-sm font-bold text-[#0b0f17] transition hover:opacity-95"
 //                           style={{ background: "linear-gradient(135deg,#10b981,#34d399)" }}
 //                         >

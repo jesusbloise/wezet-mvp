@@ -25,11 +25,17 @@ const app = express();
 app.use(express.json());
 app.use(cookieParser());
 
+const envOrigins = (process.env.CORS_ORIGIN || "")
+  .split(",")
+  .map((v) => v.trim())
+  .filter(Boolean);
+
 const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:3001",
   "http://192.168.0.56:3000",
   "http://192.168.0.56:3001",
+  ...envOrigins,
 ];
 
 app.use(
@@ -80,6 +86,7 @@ app.listen(port, () => {
 // import express from "express";
 // import cors from "cors";
 // import cookieParser from "cookie-parser";
+// import path from "path";
 
 // import pool from "./db/pool";
 // import authRoutes from "./routes/auth";
@@ -119,6 +126,8 @@ app.listen(port, () => {
 //     credentials: true,
 //   })
 // );
+
+// app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
 
 // app.get("/", (_req, res) => {
 //   res.send("WEZET API OK. Use /health");

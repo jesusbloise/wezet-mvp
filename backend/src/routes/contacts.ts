@@ -86,7 +86,7 @@ router.delete("/:id", async (req: any, res) => {
       [id, userId]
     );
 
-    return res.json({ ok: true, deleted: rowCount > 0 });
+    return res.json({ ok: true, deleted: (rowCount ?? 0) > 0 });
   } catch (e: any) {
     return res.status(500).json({ ok: false, error: String(e?.message || e) });
   }

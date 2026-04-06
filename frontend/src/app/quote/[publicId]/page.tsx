@@ -205,19 +205,30 @@ export default function PublicQuotePage() {
                 </div>
               </div>
 
-              {attachmentHref ? (
-                <a
-                  href={attachmentHref}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  download={quote.attachment_name || undefined}
-                  className="shrink-0 rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white transition hover:bg-slate-800"
-                >
-                  Descargar
-                </a>
-              ) : (
-                <span className="text-xs text-rose-500">Sin enlace disponible</span>
-              )}
+{attachmentHref ? (
+  <a
+    href={attachmentHref}
+    target="_blank"
+    rel="noopener noreferrer"
+    download={quote.attachment_name || undefined}
+    className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 hover:text-slate-900"
+  >
+    <svg
+      viewBox="0 0 24 24"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M12 3v12" />
+      <path d="M7 10l5 5 5-5" />
+      <path d="M5 21h14" />
+    </svg>
+    <span>Download</span>
+  </a>
+) : (
+  <span className="text-xs text-rose-500">Sin enlace disponible</span>
+)}
             </div>
           </div>
         ) : null}

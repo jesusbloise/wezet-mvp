@@ -24,10 +24,9 @@ const app = express();
 
 app.use(express.json());
 app.use(cookieParser());
-
 const envOrigins = (process.env.CORS_ORIGIN || "")
   .split(",")
-  .map((v) => v.trim())
+  .map((v) => v.trim().replace(/\/$/, ""))
   .filter(Boolean);
 
 const allowedOrigins = [
@@ -36,18 +35,52 @@ const allowedOrigins = [
   "http://192.168.0.56:3000",
   "http://192.168.0.56:3001",
   ...envOrigins,
-];
+].map((v) => v.trim().replace(/\/$/, ""));
 
 app.use(
   cors({
     origin: (origin, cb) => {
       if (!origin) return cb(null, true);
-      if (allowedOrigins.includes(origin)) return cb(null, true);
+
+      const normalizedOrigin = origin.trim().replace(/\/$/, "");
+
+      if (allowedOrigins.includes(normalizedOrigin)) {
+        return cb(null, true);
+      }
+
+      console.log("CORS_ORIGIN env:", process.env.CORS_ORIGIN);
+      console.log("allowedOrigins:", allowedOrigins);
+      console.log("incoming origin:", origin);
+
       return cb(new Error(`CORS blocked: ${origin}`));
     },
     credentials: true,
   })
 );
+
+// const envOrigins = (process.env.CORS_ORIGIN || "")
+//   .split(",")
+//   .map((v) => v.trim())
+//   .filter(Boolean);
+
+// const allowedOrigins = [
+//   "http://localhost:3000",
+//   "http://localhost:3001",
+//   "http://192.168.0.56:3000",
+//   "http://192.168.0.56:3001",
+//   ...envOrigins,
+// ];
+
+// app.use(
+//   cors({
+//     origin: (origin, cb) => {
+//       if (!origin) return cb(null, true);
+//       if (allowedOrigins.includes(origin)) return cb(null, true);
+//       return cb(new Error(`CORS blocked: ${origin}`));
+//     },
+//     credentials: true,
+//   })
+// );
 
 app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
 

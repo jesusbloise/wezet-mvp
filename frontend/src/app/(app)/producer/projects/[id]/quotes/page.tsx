@@ -67,42 +67,54 @@ export default function ProjectQuotesPage() {
 
       <div className="mt-6 grid gap-3">
         {quotes.map((q) => (
-          <div key={q.id} className="rounded-2xl border border-slate-200 bg-white p-5 flex justify-between gap-4">
-            <div>
-              <div className="font-bold text-slate-900">
-                {q.client_name || "Cliente sin nombre"} {q.client_email ? `• ${q.client_email}` : ""}
-              </div>
-              <div className="text-xs text-slate-500 mt-1">
-                Estado: {q.status} • Total: {q.currency} {q.total_amount}
-                {q.valid_until ? ` • Válido hasta: ${q.valid_until}` : ""}
-              </div>
+          <div
+  key={q.id}
+  className="rounded-2xl border border-slate-200 bg-white p-5 flex items-start justify-between gap-4"
+>
+  <div className="min-w-0 flex-1 overflow-hidden">
+    <div className="truncate font-bold text-slate-900">
+      {q.client_name || "Cliente sin nombre"} {q.client_email ? `• ${q.client_email}` : ""}
+    </div>
 
-              {q.public_id ? (
-                <div className="text-xs text-slate-600 mt-2">
-                  Público:{" "}
-                  <a className="underline" href={`/quote/${q.public_id}`} target="_blank">
-                    /quote/{q.public_id}
-                  </a>
-                </div>
-              ) : null}
-            </div>
+    <div className="mt-1 truncate text-xs text-slate-500">
+      Estado: {q.status} • Total: {q.currency} {q.total_amount}
+      {q.valid_until ? ` • Válido hasta: ${q.valid_until}` : ""}
+    </div>
 
-            <div className="flex gap-2">
-              <Link className="rounded-xl px-3 py-2 text-sm border border-slate-300" href={`/producer/quotes/${q.id}`}>
-                Abrir
-              </Link>
+    {q.public_id ? (
+      <div className="mt-2 truncate text-xs text-slate-600">
+        Público:{" "}
+        <a
+          className="underline"
+          href={`/quote/${q.public_id}`}
+          target="_blank"
+          rel="noreferrer"
+        >
+          /quote/{q.public_id}
+        </a>
+      </div>
+    ) : null}
+  </div>
 
-              <button
-                className="rounded-xl px-3 py-2 text-sm font-bold text-white bg-slate-900"
-                onClick={async () => {
-                  await api(`/quotes/${q.id}/publish`, { method: "POST" });
-                  await load();
-                }}
-              >
-                Publicar
-              </button>
-            </div>
-          </div>
+  <div className="flex shrink-0 gap-2">
+    <Link
+      className="rounded-xl px-3 py-2 text-sm border border-slate-300"
+      href={`/producer/quotes/${q.id}`}
+    >
+      Abrir
+    </Link>
+
+    <button
+      className="rounded-xl px-3 py-2 text-sm font-bold text-white bg-slate-900"
+      onClick={async () => {
+        await api(`/quotes/${q.id}/publish`, { method: "POST" });
+        await load();
+      }}
+    >
+      Publicar
+    </button>
+  </div>
+</div>
         ))}
 
         {quotes.length === 0 && !error && (

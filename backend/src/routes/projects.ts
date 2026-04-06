@@ -485,7 +485,7 @@ router.post("/:id/invite", requireAuth, async (req, res) => {
       [creativeEmail]
     );
 
-    if ((u.rowCount ?? 0) > 0 && u.rows[0].role === "creative" && pType === "creative") {
+ if ((u.rowCount ?? 0) > 0 && pType === "creative") {
       const creative = u.rows[0];
 
       await client.query(

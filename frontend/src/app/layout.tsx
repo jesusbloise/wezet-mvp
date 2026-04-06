@@ -1,6 +1,14 @@
 import "./globals.css";
+import type { Metadata } from "next";
 import { AuthProvider } from "@/context/AuthContext";
 import { Bebas_Neue, DM_Sans, DM_Mono } from "next/font/google";
+
+export const metadata: Metadata = {
+  title: "WEZET",
+  icons: {
+    icon: "/icon.svg",
+  },
+};
 
 const bebas = Bebas_Neue({
   weight: "400",
@@ -34,13 +42,35 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
 // import "./globals.css";
 // import { AuthProvider } from "@/context/AuthContext";
+// import { Bebas_Neue, DM_Sans, DM_Mono } from "next/font/google";
+
+// const bebas = Bebas_Neue({
+//   weight: "400",
+//   subsets: ["latin"],
+//   variable: "--font-bebas",
+// });
+
+// const dmSans = DM_Sans({
+//   subsets: ["latin"],
+//   variable: "--font-dm-sans",
+// });
+
+// const dmMono = DM_Mono({
+//   weight: ["400", "500"],
+//   subsets: ["latin"],
+//   variable: "--font-dm-mono",
+// });
 
 // export default function RootLayout({ children }: { children: React.ReactNode }) {
 //   return (
-//     <html lang="es">
+//     <html
+//       lang="es"
+//       className={`${bebas.variable} ${dmSans.variable} ${dmMono.variable}`}
+//     >
 //       <body>
 //         <AuthProvider>{children}</AuthProvider>
 //       </body>
 //     </html>
 //   );
 // }
+

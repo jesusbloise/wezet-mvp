@@ -35,7 +35,11 @@ async function assertNegotiationAccess(negotiationId: string, userId: string) {
       n.status,
       n.created_at,
       p.created_by,
-      p.title AS project_title
+      p.title AS project_title,
+      p.status AS project_status,
+      p.currency AS project_currency,
+      p.start_date AS project_start_date,
+      p.due_date AS project_due_date
     FROM negotiations n
     JOIN projects p ON p.id = n.project_id
     WHERE n.id = $1
@@ -263,7 +267,6 @@ router.post("/:id/offers", requireAuth, async (req, res) => {
 
 export default router;
 
-
 // import { Router } from "express";
 // import { z } from "zod";
 // import pool from "../db/pool";
@@ -317,6 +320,24 @@ export default router;
 //   return r.rowCount ? r.rows[0] : null;
 // }
 
+// async function getUserSummary(userId: string) {
+//   const r = await pool.query(
+//     `
+//     SELECT
+//       u.id,
+//       u.email,
+//       cp.display_name
+//     FROM users u
+//     LEFT JOIN creative_profiles cp ON cp.user_id = u.id
+//     WHERE u.id = $1
+//     LIMIT 1
+//     `,
+//     [userId]
+//   );
+
+//   return r.rowCount ? r.rows[0] : null;
+// }
+
 // /**
 //  * GET /negotiations/:id
 //  */
@@ -332,18 +353,27 @@ export default router;
 //     return res.status(404).json({ ok: false, error: "Negotiation not found" });
 //   }
 
-//   const c = await pool.query(
-//     `SELECT u.id, u.email, cp.display_name
-//      FROM users u
-//      LEFT JOIN creative_profiles cp ON cp.user_id = u.id
-//      WHERE u.id = $1`,
-//     [n.creative_user_id]
-//   );
+//   const me = await getUserSummary(userId);
+
+//   const counterpartUserId =
+//     String(n.created_by) === String(userId)
+//       ? n.creative_user_id
+//       : n.created_by;
+
+//   const counterpart = counterpartUserId
+//     ? await getUserSummary(counterpartUserId)
+//     : null;
+
+//   const creative = n.creative_user_id
+//     ? await getUserSummary(n.creative_user_id)
+//     : null;
 
 //   return res.json({
 //     ok: true,
 //     negotiation: n,
-//     creative: c.rows[0] || null,
+//     me,
+//     counterpart,
+//     creative,
 //   });
 // });
 

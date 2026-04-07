@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import pool from "../db/pool";
 import { requireAuth } from "../middlewares/requireAuth";
+import { sendInviteEmail } from "../lib/sendInviteEmail";
 
 const router = Router();
 
@@ -43,7 +44,24 @@ La aceptación de este documento habilita al participante a continuar dentro del
   `.trim();
 }
 
-// Crear proyecto
+function getFrontendBaseUrl(req: any) {
+  const envBase =
+    process.env.APP_BASE_URL ||
+    process.env.FRONTEND_URL ||
+    process.env.PUBLIC_APP_URL;
+
+  if (envBase && typeof envBase === "string") {
+    return envBase.replace(/\/+$/, "");
+  }
+
+  const origin = req.headers.origin;
+  if (origin && typeof origin === "string") {
+    return origin.replace(/\/+$/, "");
+  }
+
+  return "http://localhost:3000";
+}
+
 const createProjectSchema = z.object({
   title: z.string().min(2),
   brief: z.string().optional(),
@@ -52,6 +70,22 @@ const createProjectSchema = z.object({
   due_date: z.string().optional(),
 });
 
+const idSchema = z.string().uuid();
+const uuidSchema = z.string().uuid();
+
+const inviteSchema = z.object({
+  creativeEmail: z.string().email(),
+  participantType: z.enum(["creative", "company"]).optional(),
+  displayName: z.string().optional(),
+  phone: z.string().optional(),
+  specialty: z.string().optional(),
+});
+
+const removeCreativeSchema = z.object({
+  email: z.string().email(),
+});
+
+// Crear proyecto
 router.post("/", requireAuth, async (req, res) => {
   const parsed = createProjectSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -81,7 +115,7 @@ router.post("/", requireAuth, async (req, res) => {
   res.json({ ok: true, project: r.rows[0] });
 });
 
-// Listar proyectos propios del usuario autenticado
+// Listar proyectos propios
 router.get("/", requireAuth, async (req, res) => {
   const userId = req.user!.userId;
 
@@ -96,9 +130,7 @@ router.get("/", requireAuth, async (req, res) => {
   res.json({ ok: true, projects: r.rows });
 });
 
-// Proyectos visibles para el usuario logueado:
-// - propios
-// - compartidos por NDA/invitación
+// Proyectos visibles para el usuario
 router.get("/shared", requireAuth, async (req, res) => {
   const userId = req.user!.userId;
 
@@ -186,10 +218,7 @@ router.get("/shared", requireAuth, async (req, res) => {
   }
 });
 
-const idSchema = z.string().uuid();
-const uuidSchema = z.string().uuid();
-
-// Detalle compartido o propio del proyecto
+// Detalle compartido o propio
 router.get("/shared/:id", requireAuth, async (req, res) => {
   const userId = req.user!.userId;
   const { id } = req.params;
@@ -199,7 +228,6 @@ router.get("/shared/:id", requireAuth, async (req, res) => {
   }
 
   try {
-    // Propio por ownership real
     const own = await pool.query(
       `
       SELECT
@@ -219,7 +247,7 @@ router.get("/shared/:id", requireAuth, async (req, res) => {
       [id, userId]
     );
 
-   if ((own.rowCount ?? 0) > 0) {
+    if ((own.rowCount ?? 0) > 0) {
       return res.json({
         ok: true,
         project: own.rows[0],
@@ -306,7 +334,8 @@ router.get("/shared/:id", requireAuth, async (req, res) => {
       },
       collaboration: {
         negotiation_id: row.negotiation_id || null,
-        can_open_negotiation: !!row.negotiation_id && row.access_type === "participant",
+        can_open_negotiation:
+          !!row.negotiation_id && row.access_type === "participant",
       },
     });
   } catch (e: any) {
@@ -314,30 +343,7 @@ router.get("/shared/:id", requireAuth, async (req, res) => {
   }
 });
 
-// Detalle proyecto propio
-router.get("/:id", requireAuth, async (req, res) => {
-  const userId = req.user!.userId;
-  const { id } = req.params;
-
-  const valid = idSchema.safeParse(id);
-  if (!valid.success) {
-    return res.status(400).json({ ok: false, error: "Invalid project id" });
-  }
-
-  const r = await pool.query(
-    `SELECT id, title, brief, status, currency, start_date, due_date, created_at
-     FROM projects
-     WHERE id = $1 AND created_by = $2`,
-    [id, userId]
-  );
-
-  if (r.rowCount === 0) {
-    return res.status(404).json({ ok: false, error: "Project not found" });
-  }
-
-  res.json({ ok: true, project: r.rows[0] });
-});
-
+// Listar talentos/participantes del proyecto
 router.get("/:id/creatives", requireAuth, async (req, res) => {
   const ownerUserId = req.user!.userId;
   const ownerOrgId = req.user!.orgId ?? null;
@@ -351,6 +357,7 @@ router.get("/:id/creatives", requireAuth, async (req, res) => {
     `SELECT id FROM projects WHERE id = $1 AND created_by = $2`,
     [id, ownerUserId]
   );
+
   if (pr.rowCount === 0) {
     return res.status(404).json({ ok: false, error: "Project not found" });
   }
@@ -400,16 +407,135 @@ router.get("/:id/creatives", requireAuth, async (req, res) => {
   return res.json({ ok: true, creatives: r.rows });
 });
 
-// ===== INVITE =====
+// Eliminar talento/participante del proyecto
+router.delete("/:id/creatives", requireAuth, async (req, res) => {
+  const ownerUserId = req.user!.userId;
+  const ownerOrgId = req.user!.orgId ?? null;
+  const { id } = req.params;
 
-const inviteSchema = z.object({
-  creativeEmail: z.string().email(),
-  participantType: z.enum(["creative", "company"]).optional(),
-  displayName: z.string().optional(),
-  phone: z.string().optional(),
-  specialty: z.string().optional(),
+  if (!uuidSchema.safeParse(id).success) {
+    return res.status(400).json({ ok: false, error: "Invalid project id" });
+  }
+
+  const parsed = removeCreativeSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ ok: false, error: parsed.error.flatten() });
+  }
+
+  const email = parsed.data.email.trim().toLowerCase();
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const projectCheck = await client.query(
+      `SELECT id FROM projects WHERE id = $1 AND created_by = $2`,
+      [id, ownerUserId]
+    );
+
+    if (projectCheck.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ ok: false, error: "Project not found" });
+    }
+
+    const userQ = await client.query(
+      `SELECT id FROM users WHERE lower(email) = lower($1) LIMIT 1`,
+      [email]
+    );
+
+    const creativeUserId = userQ.rowCount ? userQ.rows[0].id : null;
+
+    if (creativeUserId) {
+      await client.query(
+        `
+        DELETE FROM negotiations
+        WHERE project_id = $1
+          AND creative_user_id = $2
+          AND (
+            ($3::uuid IS NULL AND producer_org_id IS NULL)
+            OR producer_org_id = $3::uuid
+          )
+        `,
+        [id, creativeUserId, ownerOrgId]
+      );
+
+      await client.query(
+        `
+        DELETE FROM project_creatives
+        WHERE project_id = $1
+          AND creative_user_id = $2
+        `,
+        [id, creativeUserId]
+      );
+    }
+
+    await client.query(
+      `
+      DELETE FROM project_participants
+      WHERE project_id = $1
+        AND lower(email) = lower($2)
+        AND (
+          ($3::uuid IS NULL AND producer_org_id IS NULL)
+          OR producer_org_id = $3::uuid
+        )
+      `,
+      [id, email, ownerOrgId]
+    );
+
+    await client.query(
+      `
+      DELETE FROM project_ndas
+      WHERE project_id = $1
+        AND lower(email) = lower($2)
+        AND (
+          ($3::uuid IS NULL AND producer_org_id IS NULL)
+          OR producer_org_id = $3::uuid
+        )
+      `,
+      [id, email, ownerOrgId]
+    );
+
+    await client.query("COMMIT");
+
+    return res.json({
+      ok: true,
+      removed: true,
+      email,
+      projectId: id,
+    });
+  } catch (e: any) {
+    await client.query("ROLLBACK");
+    return res.status(500).json({ ok: false, error: e?.message || String(e) });
+  } finally {
+    client.release();
+  }
 });
 
+// Detalle proyecto propio
+router.get("/:id", requireAuth, async (req, res) => {
+  const userId = req.user!.userId;
+  const { id } = req.params;
+
+  const valid = idSchema.safeParse(id);
+  if (!valid.success) {
+    return res.status(400).json({ ok: false, error: "Invalid project id" });
+  }
+
+  const r = await pool.query(
+    `SELECT id, title, brief, status, currency, start_date, due_date, created_at
+     FROM projects
+     WHERE id = $1 AND created_by = $2`,
+    [id, userId]
+  );
+
+  if (r.rowCount === 0) {
+    return res.status(404).json({ ok: false, error: "Project not found" });
+  }
+
+  res.json({ ok: true, project: r.rows[0] });
+});
+
+// Invite
 router.post("/:id/invite", requireAuth, async (req, res) => {
   const ownerOrgId = req.user!.orgId ?? null;
   const ownerUserId = req.user!.userId;
@@ -424,12 +550,14 @@ router.post("/:id/invite", requireAuth, async (req, res) => {
     return res.status(400).json({ ok: false, error: parsed.error.flatten() });
   }
 
-  const { creativeEmail, participantType, displayName, phone, specialty } = parsed.data;
+  const { creativeEmail, participantType, displayName, phone, specialty } =
+    parsed.data;
 
   const pr = await pool.query(
     `SELECT id, title FROM projects WHERE id = $1 AND created_by = $2`,
     [id, ownerUserId]
   );
+
   if (pr.rowCount === 0) {
     return res.status(404).json({ ok: false, error: "Project not found" });
   }
@@ -443,7 +571,15 @@ router.post("/:id/invite", requireAuth, async (req, res) => {
   const name: string = (displayName || "").trim() || fallbackName;
 
   const client = await pool.connect();
+
   try {
+    console.log("[invite] iniciando invitación", {
+      projectId: id,
+      creativeEmail,
+      participantType,
+      displayName,
+    });
+
     await client.query("BEGIN");
 
     const ndaBody = buildDefaultNdaBody({
@@ -452,7 +588,6 @@ router.post("/:id/invite", requireAuth, async (req, res) => {
       participantEmail: creativeEmail,
     });
 
-    // 1) UPSERT CONTACTO
     const contactUpsert = await client.query(
       `INSERT INTO contacts (owner_user_id, type, name, email, phone, specialty, company, source)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
@@ -479,13 +614,12 @@ router.post("/:id/invite", requireAuth, async (req, res) => {
 
     const contact = contactUpsert.rows[0];
 
-    // 2) si existe creative user real y es creative
     const u = await client.query(
       `SELECT id, email, role FROM users WHERE lower(email) = lower($1)`,
       [creativeEmail]
     );
 
- if ((u.rowCount ?? 0) > 0 && pType === "creative") {
+    if ((u.rowCount ?? 0) > 0 && pType === "creative") {
       const creative = u.rows[0];
 
       await client.query(
@@ -521,7 +655,6 @@ router.post("/:id/invite", requireAuth, async (req, res) => {
         [id, ownerOrgId, creative.id, creativeEmail, name, ndaBody, ownerUserId]
       );
     } else {
-      // 3) participante por contacto
       await client.query(
         `
         INSERT INTO project_participants
@@ -563,6 +696,39 @@ router.post("/:id/invite", requireAuth, async (req, res) => {
     }
 
     await client.query("COMMIT");
+
+    console.log("[invite] commit ok", {
+      creativeEmail,
+      projectTitle,
+      participantType: pType,
+    });
+
+    const registerUrl =
+      process.env.BREVO_REGISTER_URL?.trim() ||
+      "https://wezet-frontend-staging-499942741847.us-central1.run.app/register";
+
+    console.log("[invite-email] BREVO_REGISTER_URL env:", process.env.BREVO_REGISTER_URL);
+    console.log("[invite-email] registerUrl final en projects.ts:", registerUrl);
+
+    try {
+      console.log("[invite-email] entrando a sendInviteEmail", {
+        toEmail: creativeEmail,
+        projectTitle,
+        registerUrl,
+      });
+
+      await sendInviteEmail({
+        toEmail: creativeEmail,
+        toName: name,
+        projectTitle,
+        inviterName: "Equipo de WEZET",
+        registerUrl,
+      });
+
+      console.log("[invite-email] correo enviado o aceptado por Brevo para:", creativeEmail);
+    } catch (mailError: any) {
+      console.error("[invite-email] error enviando correo:", mailError?.message || mailError);
+    }
 
     return res.json({
       ok: true,
@@ -664,7 +830,10 @@ router.delete("/:id", requireAuth, async (req, res) => {
       return res.status(404).json({ ok: false, error: "Project not found" });
     }
 
-    await client.query(`DELETE FROM quote_items WHERE quote_id IN (SELECT id FROM project_quotes WHERE project_id = $1)`, [id]);
+    await client.query(
+      `DELETE FROM quote_items WHERE quote_id IN (SELECT id FROM project_quotes WHERE project_id = $1)`,
+      [id]
+    );
     await client.query(`DELETE FROM project_quotes WHERE project_id = $1`, [id]);
 
     await client.query(`DELETE FROM project_ndas WHERE project_id = $1`, [id]);
@@ -672,7 +841,10 @@ router.delete("/:id", requireAuth, async (req, res) => {
     await client.query(`DELETE FROM project_participants WHERE project_id = $1`, [id]);
     await client.query(`DELETE FROM negotiations WHERE project_id = $1`, [id]);
 
-    await client.query(`DELETE FROM projects WHERE id = $1 AND created_by = $2`, [id, userId]);
+    await client.query(`DELETE FROM projects WHERE id = $1 AND created_by = $2`, [
+      id,
+      userId,
+    ]);
 
     await client.query("COMMIT");
 
@@ -686,4 +858,3 @@ router.delete("/:id", requireAuth, async (req, res) => {
 });
 
 export default router;
-

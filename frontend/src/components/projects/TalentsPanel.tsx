@@ -158,6 +158,8 @@ export default function TalentsPanel({
   const [tabFilter, setTabFilter] = useState<"all" | "creativo" | "empresa">("all");
 
   const [addingContactId, setAddingContactId] = useState<string | null>(null);
+  const [removingEmail, setRemovingEmail] = useState<string | null>(null);
+  const [itemToRemove, setItemToRemove] = useState<CreativeRow | null>(null);
 
   const [flowOpen, setFlowOpen] = useState(false);
   const [flowStep, setFlowStep] = useState<"choose" | "form">("choose");
@@ -289,6 +291,29 @@ export default function TalentsPanel({
       setErr(String(e?.message || e));
     } finally {
       setAddingContactId(null);
+    }
+  };
+
+  const removeTalent = async () => {
+    if (!itemToRemove?.email) return;
+
+    setRemovingEmail(itemToRemove.email);
+    setErr(null);
+
+    try {
+      await api(`/projects/${projectId}/creatives`, {
+        method: "DELETE",
+        body: JSON.stringify({
+          email: itemToRemove.email,
+        }),
+      });
+
+      setItemToRemove(null);
+      await reloadAll();
+    } catch (e: any) {
+      setErr(String(e?.message || e));
+    } finally {
+      setRemovingEmail(null);
     }
   };
 
@@ -441,7 +466,7 @@ export default function TalentsPanel({
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between gap-3 sm:justify-end">
+                      <div className="flex flex-wrap items-center justify-between gap-3 sm:justify-end">
                         <span className={badgeForCreativeStatus(c.status)}>
                           {labelForCreativeStatus(c.status)}
                         </span>
@@ -456,6 +481,15 @@ export default function TalentsPanel({
                         ) : (
                           <span className="text-xs text-slate-600">Sin negociación</span>
                         )}
+
+                        <button
+                          type="button"
+                          onClick={() => setItemToRemove(c)}
+                          disabled={removingEmail === c.email}
+                          className="rounded-xl border border-rose-500/15 bg-rose-500/[0.08] px-3 py-2 text-xs font-bold text-rose-300 transition hover:bg-rose-500/[0.14] disabled:opacity-50"
+                        >
+                          {removingEmail === c.email ? "Eliminando..." : "Eliminar"}
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -640,6 +674,24 @@ export default function TalentsPanel({
           </section>
         </div>
       </div>
+
+      {itemToRemove ? (
+        <ConfirmRemoveModal
+          title="Eliminar talento del proyecto"
+          message={`Vas a eliminar a ${
+            itemToRemove.display_name || itemToRemove.email
+          } de este proyecto. También se eliminará su NDA y su negociación asociada si existe.`}
+          confirmLabel={
+            removingEmail === itemToRemove.email ? "Eliminando..." : "Sí, eliminar"
+          }
+          onCancel={() => {
+            if (removingEmail) return;
+            setItemToRemove(null);
+          }}
+          onConfirm={removeTalent}
+          loading={removingEmail === itemToRemove.email}
+        />
+      ) : null}
 
       {flowOpen ? (
         <div className="fixed inset-0 z-50">
@@ -874,6 +926,63 @@ export default function TalentsPanel({
   );
 }
 
+function ConfirmRemoveModal({
+  title,
+  message,
+  confirmLabel,
+  onCancel,
+  onConfirm,
+  loading = false,
+}: {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+  loading?: boolean;
+}) {
+  return (
+    <div className="fixed inset-0 z-50">
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/70 backdrop-blur-[2px]"
+        onClick={onCancel}
+        aria-label="Cerrar confirmación"
+      />
+
+      <div className="absolute inset-0 flex items-center justify-center p-4">
+        <div className="w-full max-w-[460px] overflow-hidden rounded-3xl border border-white/10 bg-[#0d1320] shadow-2xl">
+          <div className="border-b border-white/8 px-6 py-5">
+            <div className="text-lg font-black text-white">{title}</div>
+            <div className="mt-2 text-sm text-slate-400">{message}</div>
+          </div>
+
+          <div className="flex flex-col gap-3 px-6 py-5 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={loading}
+              className="rounded-2xl bg-white/[0.06] px-5 py-3 text-sm font-bold text-slate-200 transition hover:bg-white/[0.1] disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+
+            <button
+              type="button"
+              onClick={onConfirm}
+              disabled={loading}
+              className="rounded-2xl bg-rose-500/90 px-5 py-3 text-sm font-bold text-white transition hover:bg-rose-500 disabled:opacity-50"
+            >
+              {confirmLabel}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 // "use client";
 
 // import Link from "next/link";
@@ -1012,7 +1121,7 @@ export default function TalentsPanel({
 // export default function TalentsPanel({
 //   projectId,
 //   title = "Participantes del proyecto",
-//   description = "Agrega creativos o empresas para colaborar",
+//   description = "Agrega usuarios o empresas para colaborar",
 //   buttonLabel = "+ Agregar",
 //   onCountChange,
 // }: {
@@ -1749,3 +1858,4 @@ export default function TalentsPanel({
 //     </>
 //   );
 // }
+

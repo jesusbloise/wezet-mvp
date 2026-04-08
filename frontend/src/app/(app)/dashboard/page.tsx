@@ -172,10 +172,19 @@ export default function DashboardPage() {
                 <div className="font-ui text-[11px] uppercase tracking-[0.18em] text-slate-500">
                   overview
                 </div>
-                <h1 className="text-[22px] font-black leading-tight text-white sm:text-[26px] lg:text-[28px]">
-                  ¡Hola, {userName}! <span className="inline-block">👋</span>
-                </h1>
-                <p className="mt-1 text-sm text-slate-400">
+                <h1 className="text-[22px] font-black leading-tight sm:text-[26px] lg:text-[28px] !text-white !opacity-100">
+  <span
+    style={{
+      color: "#ffffff",
+      WebkitTextFillColor: "#ffffff",
+      textShadow: "0 1px 10px rgba(255,255,255,0.08)",
+      opacity: 1,
+    }}
+  >
+    ¡Hola, {userName}! <span className="inline-block">👋</span>
+  </span>
+</h1>
+               <p className="mt-1 text-sm !text-slate-300 !opacity-100">
                   Tu espacio de colaboración en proyectos compartidos
                 </p>
               </div>
@@ -355,7 +364,17 @@ export default function DashboardPage() {
               <div className="flex items-center justify-between border-b border-white/8 px-5 py-5 sm:px-6">
                 <div className="flex items-center gap-2">
                   <span className="text-[16px]">📁</span>
-                  <h3 className="text-[15px] font-bold text-white">Mis proyectos compartidos</h3>
+                  <h3
+  className="text-[15px] font-bold !text-white !opacity-100"
+  style={{
+    color: "#ffffff",
+    WebkitTextFillColor: "#ffffff",
+    textShadow: "0 1px 10px rgba(255,255,255,0.08)",
+    opacity: 1,
+  }}
+>
+  Proyectos
+</h3>
                 </div>
 
                 <button
@@ -418,10 +437,19 @@ export default function DashboardPage() {
               <div className="font-ui text-[11px] uppercase tracking-[0.18em] text-slate-500">
                 overview
               </div>
-              <h1 className="text-[22px] font-black leading-tight text-white sm:text-[26px] lg:text-[28px]">
-                ¡Hola, {userName}! <span className="inline-block">👋</span>
-              </h1>
-              <p className="mt-1 text-sm text-slate-400">Tu centro de control de proyectos y acuerdos</p>
+   <h1 className="text-[22px] font-black leading-tight sm:text-[26px] lg:text-[28px] !text-white !opacity-100">
+  <span
+    style={{
+      color: "#ffffff",
+      WebkitTextFillColor: "#ffffff",
+      textShadow: "0 1px 10px rgba(255,255,255,0.08)",
+      opacity: 1,
+    }}
+  >
+    ¡Hola, {userName}! <span className="inline-block">👋</span>
+  </span>
+</h1>
+              <p className="mt-1 text-sm !text-slate-300 !opacity-100">Tu centro de control de proyectos y acuerdos</p>
             </div>
 
             <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:flex lg:w-auto lg:flex-wrap lg:items-center">

@@ -125,10 +125,20 @@ export default function MyNdasPage() {
               <div className="font-ui text-[11px] uppercase tracking-[0.18em] text-slate-500">
                 confidentiality
               </div>
-              <h1 className="mt-2 text-[22px] font-black text-white sm:text-[28px]">
+
+              <h1
+                className="mt-2 text-[22px] font-black sm:text-[28px] !text-white !opacity-100"
+                style={{
+                  color: "#ffffff",
+                  WebkitTextFillColor: "#ffffff",
+                  textShadow: "0 1px 10px rgba(255,255,255,0.08)",
+                  opacity: 1,
+                }}
+              >
                 Mis NDAs
               </h1>
-              <p className="mt-2 text-sm text-slate-400">
+
+              <p className="mt-2 text-sm !text-slate-300">
                 Revisa y acepta los acuerdos de confidencialidad asociados a los proyectos donde participas.
               </p>
             </div>
@@ -143,7 +153,7 @@ export default function MyNdasPage() {
               <div className="flex items-center justify-between gap-3 border-b border-white/8 px-5 py-5 sm:px-6">
                 <div>
                   <div className="text-sm font-extrabold text-white">🔒 NDAs disponibles</div>
-                  <div className="text-xs text-slate-500">
+                  <div className="text-xs !text-slate-300">
                     Selecciona uno para revisar el detalle y responder
                   </div>
                 </div>
@@ -183,7 +193,7 @@ export default function MyNdasPage() {
                             <div className="truncate text-sm font-extrabold text-white">
                               {nda.project_title}
                             </div>
-                            <div className="mt-1 truncate text-xs text-slate-500">
+                            <div className="mt-1 truncate text-xs text-slate-400">
                               {nda.display_name || nda.email}
                             </div>
                           </div>
@@ -191,16 +201,16 @@ export default function MyNdasPage() {
                           <span className={statusBadge(nda.status)}>{nda.status}</span>
                         </div>
 
-                        <div className="mt-4 space-y-2 text-xs text-slate-400">
+                        <div className="mt-4 space-y-2 text-xs text-slate-300">
                           <div>
-                            <span className="text-slate-500">Tipo:</span>{" "}
+                            <span className="text-slate-400">Tipo:</span>{" "}
                             {typeLabel(nda.participant_type)}
                           </div>
                           <div>
-                            <span className="text-slate-500">Correo:</span> {nda.email}
+                            <span className="text-slate-400">Correo:</span> {nda.email}
                           </div>
                           <div>
-                            <span className="text-slate-500">Creado:</span>{" "}
+                            <span className="text-slate-400">Creado:</span>{" "}
                             {new Date(nda.created_at).toLocaleDateString()}
                           </div>
                         </div>
@@ -243,7 +253,7 @@ export default function MyNdasPage() {
                       <div className="truncate text-base font-black text-white sm:text-lg">
                         {selected.nda_title}
                       </div>
-                      <div className="mt-1 text-xs text-slate-500">
+                      <div className="mt-1 text-xs !text-slate-300">
                         Proyecto: {selected.project_title}
                       </div>
                     </div>
@@ -251,11 +261,11 @@ export default function MyNdasPage() {
 
                   <div className="mt-3 flex flex-wrap items-center gap-2">
                     <span className={statusBadge(selected.status)}>{selected.status}</span>
-                    <span className="truncate text-xs text-slate-500">
+                    <span className="truncate text-xs !text-slate-300">
                       {selected.email}
                     </span>
                     <span className="text-xs text-slate-600">•</span>
-                    <span className="text-xs text-slate-500">
+                    <span className="text-xs !text-slate-300">
                       {typeLabel(selected.participant_type)}
                     </span>
                   </div>
@@ -279,7 +289,7 @@ export default function MyNdasPage() {
 
               <div className="border-t border-white/8 px-4 py-4 sm:px-5 sm:py-5">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="text-xs text-slate-500 sm:max-w-[55%]">
+                  <div className="text-xs !text-slate-300 sm:max-w-[55%]">
                     Al aceptar este NDA podrás continuar con tu participación dentro del proyecto.
                   </div>
 

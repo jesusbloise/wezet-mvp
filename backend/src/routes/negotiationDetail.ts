@@ -34,14 +34,23 @@ async function assertNegotiationAccess(negotiationId: string, userId: string) {
       n.creative_user_id,
       n.status,
       n.created_at,
+
       p.created_by,
       p.title AS project_title,
       p.status AS project_status,
       p.currency AS project_currency,
       p.start_date AS project_start_date,
-      p.due_date AS project_due_date
+      p.due_date AS project_due_date,
+      p.brief AS project_brief,
+      p.has_commercial_dimension,
+      p.has_team_dimension,
+      p.client_name,
+      p.client_email,
+      p.client_company
+
     FROM negotiations n
-    JOIN projects p ON p.id = n.project_id
+    JOIN projects p
+      ON p.id = n.project_id
     WHERE n.id = $1
       AND (
         p.created_by = $2
@@ -63,7 +72,8 @@ async function getUserSummary(userId: string) {
       u.email,
       cp.display_name
     FROM users u
-    LEFT JOIN creative_profiles cp ON cp.user_id = u.id
+    LEFT JOIN creative_profiles cp
+      ON cp.user_id = u.id
     WHERE u.id = $1
     LIMIT 1
     `,
@@ -83,33 +93,108 @@ router.get("/:id", requireAuth, async (req, res) => {
   const id = getParamId(req, res);
   if (!id) return;
 
-  const n = await assertNegotiationAccess(id, userId);
-  if (!n) {
-    return res.status(404).json({ ok: false, error: "Negotiation not found" });
+  try {
+    const n = await assertNegotiationAccess(id, userId);
+    if (!n) {
+      return res.status(404).json({ ok: false, error: "Negotiation not found" });
+    }
+
+    const me = await getUserSummary(userId);
+
+    const counterpartUserId =
+      String(n.created_by) === String(userId)
+        ? n.creative_user_id
+        : n.created_by;
+
+    const counterpart = counterpartUserId
+      ? await getUserSummary(counterpartUserId)
+      : null;
+
+    const creative = n.creative_user_id
+      ? await getUserSummary(n.creative_user_id)
+      : null;
+
+    const latestOfferQ = await pool.query(
+      `
+      SELECT
+        o.id,
+        o.amount,
+        o.currency,
+        o.notes AS note,
+        o.payment_date,
+        o.payment_method,
+        o.status,
+        o.created_at,
+        o.created_by AS created_by_user_id,
+        u.email
+      FROM negotiation_offers o
+      JOIN users u
+        ON u.id = o.created_by
+      WHERE o.negotiation_id = $1
+      ORDER BY o.created_at DESC
+      LIMIT 1
+      `,
+      [id]
+    );
+
+    const acceptedOfferQ = await pool.query(
+      `
+      SELECT
+        o.id,
+        o.amount,
+        o.currency,
+        o.notes AS note,
+        o.payment_date,
+        o.payment_method,
+        o.status,
+        o.created_at,
+        o.created_by AS created_by_user_id,
+        u.email
+      FROM negotiation_offers o
+      JOIN users u
+        ON u.id = o.created_by
+      WHERE o.negotiation_id = $1
+        AND o.status = 'accepted'
+      ORDER BY o.created_at DESC
+      LIMIT 1
+      `,
+      [id]
+    );
+
+    const messagesCountQ = await pool.query(
+      `
+      SELECT COUNT(*)::int AS count
+      FROM negotiation_messages
+      WHERE negotiation_id = $1
+      `,
+      [id]
+    );
+
+    const offersCountQ = await pool.query(
+      `
+      SELECT COUNT(*)::int AS count
+      FROM negotiation_offers
+      WHERE negotiation_id = $1
+      `,
+      [id]
+    );
+
+    return res.json({
+      ok: true,
+      negotiation: n,
+      me,
+      counterpart,
+      creative,
+      latest_offer: latestOfferQ.rowCount ? latestOfferQ.rows[0] : null,
+      accepted_offer: acceptedOfferQ.rowCount ? acceptedOfferQ.rows[0] : null,
+      summary: {
+        messages_count: messagesCountQ.rows[0]?.count ?? 0,
+        offers_count: offersCountQ.rows[0]?.count ?? 0,
+      },
+    });
+  } catch (e: any) {
+    return res.status(500).json({ ok: false, error: e?.message || String(e) });
   }
-
-  const me = await getUserSummary(userId);
-
-  const counterpartUserId =
-    String(n.created_by) === String(userId)
-      ? n.creative_user_id
-      : n.created_by;
-
-  const counterpart = counterpartUserId
-    ? await getUserSummary(counterpartUserId)
-    : null;
-
-  const creative = n.creative_user_id
-    ? await getUserSummary(n.creative_user_id)
-    : null;
-
-  return res.json({
-    ok: true,
-    negotiation: n,
-    me,
-    counterpart,
-    creative,
-  });
 });
 
 /**
@@ -122,29 +207,45 @@ router.get("/:id/messages", requireAuth, async (req, res) => {
   const id = getParamId(req, res);
   if (!id) return;
 
-  const n = await assertNegotiationAccess(id, userId);
-  if (!n) {
-    return res.status(404).json({ ok: false, error: "Negotiation not found" });
+  try {
+    const n = await assertNegotiationAccess(id, userId);
+    if (!n) {
+      return res.status(404).json({ ok: false, error: "Negotiation not found" });
+    }
+
+    const r = await pool.query(
+      `
+      SELECT
+        m.id,
+        m.message,
+        m.created_at,
+        m.sender_user_id,
+        u.email,
+        cp.display_name
+      FROM negotiation_messages m
+      JOIN users u
+        ON u.id = m.sender_user_id
+      LEFT JOIN creative_profiles cp
+        ON cp.user_id = u.id
+      WHERE m.negotiation_id = $1
+      ORDER BY m.created_at ASC
+      `,
+      [id]
+    );
+
+    const messages = r.rows.map((x: any) => ({
+      id: x.id,
+      body: x.message,
+      created_at: x.created_at,
+      sender_user_id: x.sender_user_id,
+      email: x.email,
+      display_name: x.display_name,
+    }));
+
+    return res.json({ ok: true, messages });
+  } catch (e: any) {
+    return res.status(500).json({ ok: false, error: e?.message || String(e) });
   }
-
-  const r = await pool.query(
-    `SELECT m.id, m.message, m.created_at, m.sender_user_id, u.email
-     FROM negotiation_messages m
-     JOIN users u ON u.id = m.sender_user_id
-     WHERE m.negotiation_id = $1
-     ORDER BY m.created_at ASC`,
-    [id]
-  );
-
-  const messages = r.rows.map((x: any) => ({
-    id: x.id,
-    body: x.message,
-    created_at: x.created_at,
-    sender_user_id: x.sender_user_id,
-    email: x.email,
-  }));
-
-  return res.json({ ok: true, messages });
 });
 
 /**
@@ -166,27 +267,33 @@ router.post("/:id/messages", requireAuth, async (req, res) => {
     return res.status(400).json({ ok: false, error: parsed.error.flatten() });
   }
 
-  const n = await assertNegotiationAccess(id, userId);
-  if (!n) {
-    return res.status(404).json({ ok: false, error: "Negotiation not found" });
+  try {
+    const n = await assertNegotiationAccess(id, userId);
+    if (!n) {
+      return res.status(404).json({ ok: false, error: "Negotiation not found" });
+    }
+
+    const r = await pool.query(
+      `
+      INSERT INTO negotiation_messages (negotiation_id, sender_user_id, message)
+      VALUES ($1, $2, $3)
+      RETURNING id, message, created_at, sender_user_id
+      `,
+      [id, userId, parsed.data.body]
+    );
+
+    return res.json({
+      ok: true,
+      message: {
+        id: r.rows[0].id,
+        body: r.rows[0].message,
+        created_at: r.rows[0].created_at,
+        sender_user_id: r.rows[0].sender_user_id,
+      },
+    });
+  } catch (e: any) {
+    return res.status(500).json({ ok: false, error: e?.message || String(e) });
   }
-
-  const r = await pool.query(
-    `INSERT INTO negotiation_messages (negotiation_id, sender_user_id, message)
-     VALUES ($1, $2, $3)
-     RETURNING id, message, created_at, sender_user_id`,
-    [id, userId, parsed.data.body]
-  );
-
-  return res.json({
-    ok: true,
-    message: {
-      id: r.rows[0].id,
-      body: r.rows[0].message,
-      created_at: r.rows[0].created_at,
-      sender_user_id: r.rows[0].sender_user_id,
-    },
-  });
 });
 
 /**
@@ -199,31 +306,38 @@ router.get("/:id/offers", requireAuth, async (req, res) => {
   const id = getParamId(req, res);
   if (!id) return;
 
-  const n = await assertNegotiationAccess(id, userId);
-  if (!n) {
-    return res.status(404).json({ ok: false, error: "Negotiation not found" });
+  try {
+    const n = await assertNegotiationAccess(id, userId);
+    if (!n) {
+      return res.status(404).json({ ok: false, error: "Negotiation not found" });
+    }
+
+    const r = await pool.query(
+      `
+      SELECT
+        o.id,
+        o.amount,
+        o.currency,
+        o.notes AS note,
+        o.payment_date,
+        o.payment_method,
+        o.status,
+        o.created_at,
+        o.created_by AS created_by_user_id,
+        u.email
+      FROM negotiation_offers o
+      JOIN users u
+        ON u.id = o.created_by
+      WHERE o.negotiation_id = $1
+      ORDER BY o.created_at DESC
+      `,
+      [id]
+    );
+
+    return res.json({ ok: true, offers: r.rows });
+  } catch (e: any) {
+    return res.status(500).json({ ok: false, error: e?.message || String(e) });
   }
-
-  const r = await pool.query(
-    `SELECT
-       o.id,
-       o.amount,
-       o.currency,
-       o.notes as note,
-       o.payment_date,
-       o.payment_method,
-       o.status,
-       o.created_at,
-       o.created_by as created_by_user_id,
-       u.email
-     FROM negotiation_offers o
-     JOIN users u ON u.id = o.created_by
-     WHERE o.negotiation_id = $1
-     ORDER BY o.created_at DESC`,
-    [id]
-  );
-
-  return res.json({ ok: true, offers: r.rows });
 });
 
 /**
@@ -249,69 +363,89 @@ router.post("/:id/offers", requireAuth, async (req, res) => {
     return res.status(400).json({ ok: false, error: parsed.error.flatten() });
   }
 
-  const n = await assertNegotiationAccess(id, userId);
-  if (!n) {
-    return res.status(404).json({ ok: false, error: "Negotiation not found" });
+  try {
+    const n = await assertNegotiationAccess(id, userId);
+    if (!n) {
+      return res.status(404).json({ ok: false, error: "Negotiation not found" });
+    }
+
+    const alreadyAccepted = await pool.query(
+      `
+      SELECT id
+      FROM negotiation_offers
+      WHERE negotiation_id = $1
+        AND status = 'accepted'
+      LIMIT 1
+      `,
+      [id]
+    );
+
+    if ((alreadyAccepted.rowCount ?? 0) > 0) {
+      return res.status(400).json({
+        ok: false,
+        error: "Ya existe una oferta aceptada en esta negociación",
+      });
+    }
+
+    const paymentDate =
+      parsed.data.payment_date && parsed.data.payment_date.trim()
+        ? parsed.data.payment_date.trim()
+        : null;
+
+    const paymentMethod =
+      parsed.data.payment_method && parsed.data.payment_method.trim()
+        ? parsed.data.payment_method.trim()
+        : null;
+
+    const r = await pool.query(
+      `
+      INSERT INTO negotiation_offers (
+        negotiation_id,
+        created_by,
+        amount,
+        currency,
+        notes,
+        payment_date,
+        payment_method,
+        status
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, 'proposed')
+      RETURNING
+        id,
+        amount,
+        currency,
+        notes AS note,
+        payment_date,
+        payment_method,
+        status,
+        created_at,
+        created_by AS created_by_user_id
+      `,
+      [
+        id,
+        userId,
+        parsed.data.amount,
+        parsed.data.currency || "CLP",
+        parsed.data.note || null,
+        paymentDate,
+        paymentMethod,
+      ]
+    );
+
+  await pool.query(
+  `
+  UPDATE negotiations
+  SET status = 'open'
+  WHERE id = $1
+    AND COALESCE(status, 'open') <> 'agreed'
+  `,
+  [id]
+);
+
+    return res.json({ ok: true, offer: r.rows[0] });
+  } catch (e: any) {
+    return res.status(500).json({ ok: false, error: e?.message || String(e) });
   }
-
-  const alreadyAccepted = await pool.query(
-    `SELECT id FROM negotiation_offers
-     WHERE negotiation_id = $1 AND status = 'accepted'
-     LIMIT 1`,
-    [id]
-  );
-
- if ((alreadyAccepted.rowCount ?? 0) > 0) {
-    return res.status(400).json({
-      ok: false,
-      error: "Ya existe una oferta aceptada en esta negociación",
-    });
-  }
-
-  const paymentDate =
-    parsed.data.payment_date && parsed.data.payment_date.trim()
-      ? parsed.data.payment_date.trim()
-      : null;
-
-  const paymentMethod =
-    parsed.data.payment_method && parsed.data.payment_method.trim()
-      ? parsed.data.payment_method.trim()
-      : null;
-
-  const r = await pool.query(
-    `INSERT INTO negotiation_offers (
-       negotiation_id,
-       created_by,
-       amount,
-       currency,
-       notes,
-       payment_date,
-       payment_method,
-       status
-     )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, 'proposed')
-     RETURNING
-       id,
-       amount,
-       currency,
-       notes as note,
-       payment_date,
-       payment_method,
-       status,
-       created_at,
-       created_by as created_by_user_id`,
-    [
-      id,
-      userId,
-      parsed.data.amount,
-      parsed.data.currency || "CLP",
-      parsed.data.note || null,
-      paymentDate,
-      paymentMethod,
-    ]
-  );
-
-  return res.json({ ok: true, offer: r.rows[0] });
 });
 
 /**
@@ -344,15 +478,17 @@ router.patch("/:id/offers/:offerId/status", requireAuth, async (req, res) => {
   }
 
   const offerQ = await pool.query(
-    `SELECT
-       id,
-       negotiation_id,
-       created_by,
-       status
-     FROM negotiation_offers
-     WHERE id = $1
-       AND negotiation_id = $2
-     LIMIT 1`,
+    `
+    SELECT
+      id,
+      negotiation_id,
+      created_by,
+      status
+    FROM negotiation_offers
+    WHERE id = $1
+      AND negotiation_id = $2
+    LIMIT 1
+    `,
     [offerId, negotiationId]
   );
 
@@ -383,32 +519,40 @@ router.patch("/:id/offers/:offerId/status", requireAuth, async (req, res) => {
 
     if (parsed.data.action === "accepted") {
       await client.query(
-        `UPDATE negotiation_offers
-         SET status = 'accepted'
-         WHERE id = $1`,
+        `
+        UPDATE negotiation_offers
+        SET status = 'accepted'
+        WHERE id = $1
+        `,
         [offerId]
       );
 
       await client.query(
-        `UPDATE negotiation_offers
-         SET status = 'rejected'
-         WHERE negotiation_id = $1
-           AND id <> $2
-           AND status <> 'accepted'`,
+        `
+        UPDATE negotiation_offers
+        SET status = 'rejected'
+        WHERE negotiation_id = $1
+          AND id <> $2
+          AND status <> 'accepted'
+        `,
         [negotiationId, offerId]
       );
 
       await client.query(
-        `UPDATE negotiations
-         SET status = 'agreed'
-         WHERE id = $1`,
+        `
+        UPDATE negotiations
+        SET status = 'agreed'
+        WHERE id = $1
+        `,
         [negotiationId]
       );
     } else {
       await client.query(
-        `UPDATE negotiation_offers
-         SET status = 'rejected'
-         WHERE id = $1`,
+        `
+        UPDATE negotiation_offers
+        SET status = 'rejected'
+        WHERE id = $1
+        `,
         [offerId]
       );
     }
@@ -430,3 +574,4 @@ router.patch("/:id/offers/:offerId/status", requireAuth, async (req, res) => {
 });
 
 export default router;
+

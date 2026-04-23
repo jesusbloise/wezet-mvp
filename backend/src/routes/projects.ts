@@ -44,30 +44,17 @@ La aceptación de este documento habilita al participante a continuar dentro del
   `.trim();
 }
 
-function getFrontendBaseUrl(req: any) {
-  const envBase =
-    process.env.APP_BASE_URL ||
-    process.env.FRONTEND_URL ||
-    process.env.PUBLIC_APP_URL;
-
-  if (envBase && typeof envBase === "string") {
-    return envBase.replace(/\/+$/, "");
-  }
-
-  const origin = req.headers.origin;
-  if (origin && typeof origin === "string") {
-    return origin.replace(/\/+$/, "");
-  }
-
-  return "http://localhost:3000";
-}
-
 const createProjectSchema = z.object({
   title: z.string().min(2),
   brief: z.string().optional(),
   currency: z.string().optional(),
   start_date: z.string().optional(),
   due_date: z.string().optional(),
+  has_commercial_dimension: z.boolean().optional(),
+  has_team_dimension: z.boolean().optional(),
+  client_name: z.string().optional(),
+  client_email: z.string().optional(),
+  client_company: z.string().optional(),
 });
 
 const idSchema = z.string().uuid();
@@ -85,6 +72,19 @@ const removeCreativeSchema = z.object({
   email: z.string().email(),
 });
 
+const updateProjectSchema = z.object({
+  title: z.string().min(2).optional(),
+  brief: z.string().optional(),
+  currency: z.string().optional(),
+  start_date: z.string().optional(),
+  due_date: z.string().optional(),
+  has_commercial_dimension: z.boolean().optional(),
+  has_team_dimension: z.boolean().optional(),
+  client_name: z.string().optional(),
+  client_email: z.string().optional(),
+  client_company: z.string().optional(),
+});
+
 // Crear proyecto
 router.post("/", requireAuth, async (req, res) => {
   const parsed = createProjectSchema.safeParse(req.body);
@@ -92,15 +92,52 @@ router.post("/", requireAuth, async (req, res) => {
     return res.status(400).json({ ok: false, error: parsed.error.flatten() });
   }
 
-  const { title, brief, currency, start_date, due_date } = parsed.data;
+  const {
+    title,
+    brief,
+    currency,
+    start_date,
+    due_date,
+    has_commercial_dimension,
+    has_team_dimension,
+    client_name,
+    client_email,
+    client_company,
+  } = parsed.data;
 
   const ownerOrgId = req.user!.orgId ?? null;
   const createdBy = req.user!.userId;
 
   const r = await pool.query(
-    `INSERT INTO projects (producer_org_id, title, brief, currency, start_date, due_date, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7)
-     RETURNING id, title, brief, status, currency, start_date, due_date, created_at`,
+    `INSERT INTO projects (
+      producer_org_id,
+      title,
+      brief,
+      currency,
+      start_date,
+      due_date,
+      created_by,
+      has_commercial_dimension,
+      has_team_dimension,
+      client_name,
+      client_email,
+      client_company
+    )
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+     RETURNING
+       id,
+       title,
+       brief,
+       status,
+       currency,
+       start_date,
+       due_date,
+       created_at,
+       has_commercial_dimension,
+       has_team_dimension,
+       client_name,
+       client_email,
+       client_company`,
     [
       ownerOrgId,
       title,
@@ -109,25 +146,195 @@ router.post("/", requireAuth, async (req, res) => {
       start_date ?? null,
       due_date ?? null,
       createdBy,
+      has_commercial_dimension ?? false,
+      has_team_dimension ?? false,
+      client_name?.trim() || null,
+      client_email?.trim() || null,
+      client_company?.trim() || null,
     ]
   );
 
   res.json({ ok: true, project: r.rows[0] });
 });
 
-// Listar proyectos propios
+// Listar proyectos propios con resumen de progreso
 router.get("/", requireAuth, async (req, res) => {
   const userId = req.user!.userId;
+  const ownerOrgId = req.user!.orgId ?? null;
 
-  const r = await pool.query(
-    `SELECT id, title, status, currency, start_date, due_date, created_at
-     FROM projects
-     WHERE created_by = $1
-     ORDER BY created_at DESC`,
-    [userId]
-  );
+  try {
+    const r = await pool.query(
+      `
+      WITH base_projects AS (
+        SELECT
+          p.id,
+          p.title,
+          p.status,
+          p.currency,
+          p.start_date,
+          p.due_date,
+          p.created_at,
+          p.has_commercial_dimension,
+          p.has_team_dimension,
+          p.client_name,
+          p.client_email,
+          p.client_company
+        FROM projects p
+        WHERE p.created_by = $1
+      ),
 
-  res.json({ ok: true, projects: r.rows });
+      participants_summary AS (
+        SELECT
+          bp.id AS project_id,
+          (
+            COALESCE((
+              SELECT COUNT(*)
+              FROM project_creatives pc
+              WHERE pc.project_id = bp.id
+            ), 0)
+            +
+            COALESCE((
+              SELECT COUNT(*)
+              FROM project_participants pp
+              WHERE pp.project_id = bp.id
+                AND (
+                  ($2::uuid IS NULL AND pp.producer_org_id IS NULL)
+                  OR pp.producer_org_id = $2::uuid
+                )
+            ), 0)
+          )::int AS participants_count
+        FROM base_projects bp
+      ),
+
+      nda_summary AS (
+        SELECT
+          bp.id AS project_id,
+          COALESCE(COUNT(pn.*), 0)::int AS ndas_total,
+          COALESCE(COUNT(*) FILTER (WHERE COALESCE(pn.status, 'pending') = 'pending'), 0)::int AS ndas_pending,
+          COALESCE(COUNT(*) FILTER (WHERE pn.status = 'accepted'), 0)::int AS ndas_accepted
+        FROM base_projects bp
+        LEFT JOIN project_ndas pn
+          ON pn.project_id = bp.id
+         AND (
+           ($2::uuid IS NULL AND pn.producer_org_id IS NULL)
+           OR pn.producer_org_id = $2::uuid
+         )
+        GROUP BY bp.id
+      ),
+
+      quote_summary AS (
+        SELECT
+          bp.id AS project_id,
+          COALESCE(COUNT(q.*), 0)::int AS quotes_count,
+          COALESCE(COUNT(*) FILTER (WHERE lower(COALESCE(q.status, 'draft')) IN ('sent','viewed','changes_requested')), 0)::int AS quotes_sent,
+          COALESCE(COUNT(*) FILTER (WHERE lower(COALESCE(q.status, 'draft')) = 'approved'), 0)::int AS quotes_approved
+        FROM base_projects bp
+        LEFT JOIN project_quotes q
+          ON q.project_id = bp.id
+        GROUP BY bp.id
+      )
+
+      SELECT
+        bp.id,
+        bp.title,
+        bp.status,
+        bp.currency,
+        bp.start_date,
+        bp.due_date,
+        bp.created_at,
+
+        bp.has_commercial_dimension,
+        bp.has_team_dimension,
+        bp.client_name,
+        bp.client_email,
+        bp.client_company,
+
+        ps.participants_count,
+        ns.ndas_total,
+        ns.ndas_pending,
+        ns.ndas_accepted,
+        qs.quotes_count,
+        qs.quotes_sent,
+        qs.quotes_approved,
+
+               CASE
+          WHEN bp.has_commercial_dimension = true
+               AND COALESCE(NULLIF(trim(bp.client_name), ''), NULL) IS NULL
+               AND COALESCE(NULLIF(trim(bp.client_email), ''), NULL) IS NULL
+               AND COALESCE(NULLIF(trim(bp.client_company), ''), NULL) IS NULL
+            THEN 'client'
+
+          WHEN qs.quotes_count > 0
+            THEN 'agreement'
+
+          WHEN bp.has_team_dimension = true
+               AND ps.participants_count = 0
+            THEN 'participants'
+
+          WHEN bp.has_commercial_dimension = true
+               AND (
+                 COALESCE(NULLIF(trim(bp.client_name), ''), NULL) IS NOT NULL
+                 OR COALESCE(NULLIF(trim(bp.client_email), ''), NULL) IS NOT NULL
+                 OR COALESCE(NULLIF(trim(bp.client_company), ''), NULL) IS NOT NULL
+               )
+               AND qs.quotes_count = 0
+            THEN 'quote'
+
+          WHEN bp.has_team_dimension = true
+               AND ps.participants_count > 0
+               AND bp.has_commercial_dimension = false
+            THEN 'participants'
+
+          ELSE 'created'
+        END AS progress_stage,
+
+        CASE
+          WHEN bp.has_commercial_dimension = true
+               AND COALESCE(NULLIF(trim(bp.client_name), ''), NULL) IS NULL
+               AND COALESCE(NULLIF(trim(bp.client_email), ''), NULL) IS NULL
+               AND COALESCE(NULLIF(trim(bp.client_company), ''), NULL) IS NULL
+            THEN 'Agregar cliente'
+
+          WHEN qs.quotes_count > 0
+            THEN 'Acuerdo'
+
+          WHEN bp.has_team_dimension = true
+               AND ps.participants_count = 0
+            THEN 'Agregar participantes'
+
+          WHEN bp.has_commercial_dimension = true
+               AND (
+                 COALESCE(NULLIF(trim(bp.client_name), ''), NULL) IS NOT NULL
+                 OR COALESCE(NULLIF(trim(bp.client_email), ''), NULL) IS NOT NULL
+                 OR COALESCE(NULLIF(trim(bp.client_company), ''), NULL) IS NOT NULL
+               )
+               AND qs.quotes_count = 0
+            THEN 'Crear cotización'
+
+          WHEN bp.has_team_dimension = true
+               AND ps.participants_count > 0
+               AND bp.has_commercial_dimension = false
+            THEN CASE
+              WHEN ns.ndas_pending > 0 THEN 'Revisar NDA'
+              ELSE 'Gestionar participantes'
+            END
+
+          ELSE 'Activar flujo'
+        END AS next_step_label
+
+      FROM base_projects bp
+      LEFT JOIN participants_summary ps ON ps.project_id = bp.id
+      LEFT JOIN nda_summary ns ON ns.project_id = bp.id
+      LEFT JOIN quote_summary qs ON qs.project_id = bp.id
+      ORDER BY bp.created_at DESC
+      `,
+      [userId, ownerOrgId]
+    );
+
+    return res.json({ ok: true, projects: r.rows });
+  } catch (e: any) {
+    return res.status(500).json({ ok: false, error: e?.message || String(e) });
+  }
 });
 
 // Proyectos visibles para el usuario
@@ -146,6 +353,11 @@ router.get("/shared", requireAuth, async (req, res) => {
           p.start_date,
           p.due_date,
           p.created_at,
+          p.has_commercial_dimension,
+          p.has_team_dimension,
+          p.client_name,
+          p.client_email,
+          p.client_company,
           'owner'::text AS access_type,
           'accepted'::text AS nda_status,
           1 AS priority
@@ -161,6 +373,11 @@ router.get("/shared", requireAuth, async (req, res) => {
           p.start_date,
           p.due_date,
           p.created_at,
+          p.has_commercial_dimension,
+          p.has_team_dimension,
+          p.client_name,
+          p.client_email,
+          p.client_company,
           CASE
             WHEN pc.creative_user_id IS NOT NULL THEN 'participant'
             ELSE 'nda_only'
@@ -191,6 +408,11 @@ router.get("/shared", requireAuth, async (req, res) => {
           start_date,
           due_date,
           created_at,
+          has_commercial_dimension,
+          has_team_dimension,
+          client_name,
+          client_email,
+          client_company,
           access_type,
           nda_status
         FROM merged
@@ -204,6 +426,11 @@ router.get("/shared", requireAuth, async (req, res) => {
         start_date,
         due_date,
         created_at,
+        has_commercial_dimension,
+        has_team_dimension,
+        client_name,
+        client_email,
+        client_company,
         access_type,
         nda_status
       FROM dedup
@@ -238,7 +465,12 @@ router.get("/shared/:id", requireAuth, async (req, res) => {
         currency,
         start_date,
         due_date,
-        created_at
+        created_at,
+        has_commercial_dimension,
+        has_team_dimension,
+        client_name,
+        client_email,
+        client_company
       FROM projects
       WHERE id = $1
         AND created_by = $2
@@ -281,6 +513,11 @@ router.get("/shared/:id", requireAuth, async (req, res) => {
         p.start_date,
         p.due_date,
         p.created_at,
+        p.has_commercial_dimension,
+        p.has_team_dimension,
+        p.client_name,
+        p.client_email,
+        p.client_company,
         CASE
           WHEN pc.creative_user_id IS NOT NULL THEN 'participant'
           ELSE 'nda_only'
@@ -327,6 +564,11 @@ router.get("/shared/:id", requireAuth, async (req, res) => {
         start_date: row.start_date,
         due_date: row.due_date,
         created_at: row.created_at,
+        has_commercial_dimension: row.has_commercial_dimension,
+        has_team_dimension: row.has_team_dimension,
+        client_name: row.client_name,
+        client_email: row.client_email,
+        client_company: row.client_company,
       },
       access: {
         type: row.access_type,
@@ -522,7 +764,20 @@ router.get("/:id", requireAuth, async (req, res) => {
   }
 
   const r = await pool.query(
-    `SELECT id, title, brief, status, currency, start_date, due_date, created_at
+    `SELECT
+       id,
+       title,
+       brief,
+       status,
+       currency,
+       start_date,
+       due_date,
+       created_at,
+       has_commercial_dimension,
+       has_team_dimension,
+       client_name,
+       client_email,
+       client_company
      FROM projects
      WHERE id = $1 AND created_by = $2`,
     [id, userId]
@@ -695,28 +950,22 @@ router.post("/:id/invite", requireAuth, async (req, res) => {
       );
     }
 
-    await client.query("COMMIT");
+    await client.query(
+      `
+      UPDATE projects
+      SET has_team_dimension = true
+      WHERE id = $1 AND created_by = $2
+      `,
+      [id, ownerUserId]
+    );
 
-    console.log("[invite] commit ok", {
-      creativeEmail,
-      projectTitle,
-      participantType: pType,
-    });
+    await client.query("COMMIT");
 
     const registerUrl =
       process.env.BREVO_REGISTER_URL?.trim() ||
       "https://wezet-frontend-staging-499942741847.us-central1.run.app/register";
 
-    console.log("[invite-email] BREVO_REGISTER_URL env:", process.env.BREVO_REGISTER_URL);
-    console.log("[invite-email] registerUrl final en projects.ts:", registerUrl);
-
     try {
-      console.log("[invite-email] entrando a sendInviteEmail", {
-        toEmail: creativeEmail,
-        projectTitle,
-        registerUrl,
-      });
-
       await sendInviteEmail({
         toEmail: creativeEmail,
         toName: name,
@@ -724,8 +973,6 @@ router.post("/:id/invite", requireAuth, async (req, res) => {
         inviterName: "Equipo de WEZET",
         registerUrl,
       });
-
-      console.log("[invite-email] correo enviado o aceptado por Brevo para:", creativeEmail);
     } catch (mailError: any) {
       console.error("[invite-email] error enviando correo:", mailError?.message || mailError);
     }
@@ -747,14 +994,6 @@ router.post("/:id/invite", requireAuth, async (req, res) => {
   }
 });
 
-const updateProjectSchema = z.object({
-  title: z.string().min(2).optional(),
-  brief: z.string().optional(),
-  currency: z.string().optional(),
-  start_date: z.string().optional(),
-  due_date: z.string().optional(),
-});
-
 router.patch("/:id", requireAuth, async (req, res) => {
   const userId = req.user!.userId;
   const { id } = req.params;
@@ -770,7 +1009,20 @@ router.patch("/:id", requireAuth, async (req, res) => {
   }
 
   const existing = await pool.query(
-    `SELECT id, title, brief, status, currency, start_date, due_date, created_at
+    `SELECT
+       id,
+       title,
+       brief,
+       status,
+       currency,
+       start_date,
+       due_date,
+       created_at,
+       has_commercial_dimension,
+       has_team_dimension,
+       client_name,
+       client_email,
+       client_company
      FROM projects
      WHERE id = $1 AND created_by = $2`,
     [id, userId]
@@ -789,9 +1041,27 @@ router.patch("/:id", requireAuth, async (req, res) => {
        brief = COALESCE($4, brief),
        currency = COALESCE($5, currency),
        start_date = COALESCE($6, start_date),
-       due_date = COALESCE($7, due_date)
+       due_date = COALESCE($7, due_date),
+       has_commercial_dimension = COALESCE($8, has_commercial_dimension),
+       has_team_dimension = COALESCE($9, has_team_dimension),
+       client_name = COALESCE($10, client_name),
+       client_email = COALESCE($11, client_email),
+       client_company = COALESCE($12, client_company)
      WHERE id = $1 AND created_by = $2
-     RETURNING id, title, brief, status, currency, start_date, due_date, created_at`,
+     RETURNING
+       id,
+       title,
+       brief,
+       status,
+       currency,
+       start_date,
+       due_date,
+       created_at,
+       has_commercial_dimension,
+       has_team_dimension,
+       client_name,
+       client_email,
+       client_company`,
     [
       id,
       userId,
@@ -800,6 +1070,11 @@ router.patch("/:id", requireAuth, async (req, res) => {
       d.currency ?? null,
       d.start_date ?? null,
       d.due_date ?? null,
+      typeof d.has_commercial_dimension === "boolean" ? d.has_commercial_dimension : null,
+      typeof d.has_team_dimension === "boolean" ? d.has_team_dimension : null,
+            d.client_name !== undefined ? d.client_name.trim() || null : null,
+      d.client_email !== undefined ? d.client_email.trim() || null : null,
+      d.client_company !== undefined ? d.client_company.trim() || null : null,
     ]
   );
 
@@ -858,3 +1133,4 @@ router.delete("/:id", requireAuth, async (req, res) => {
 });
 
 export default router;
+

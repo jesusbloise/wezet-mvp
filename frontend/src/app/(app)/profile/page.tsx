@@ -182,13 +182,22 @@ export default function ProfilePage() {
             <div className="font-ui text-[11px] uppercase tracking-[0.18em] text-slate-500">
               account profile
             </div>
-            <h1 className="mt-2 text-xl font-bold text-white">
+              <h1
+    className="mt-2 text-[26px] font-black"
+    style={{
+      color: "#ffffff",
+      textShadow: "0 1px 10px rgba(0,0,0,0.35)",
+    }}
+  >
+    Mi Perfil
+  </h1>
+            {/* <h1 className="mt-2 text-xl font-bold text-white">
               {isCreative
                 ? "Mi Perfil Creativo"
                 : isCompany
                 ? "Perfil de Empresa"
                 : "Mi Perfil"}
-            </h1>
+            </h1> */}
             <p className="mt-1 text-sm text-slate-500">
               Completa tu información para personalizar tu experiencia
             </p>
@@ -201,9 +210,18 @@ export default function ProfilePage() {
               <div className="max-h-[70vh] overflow-y-auto px-6 py-6">
                 <div className="space-y-4">
                   <div className={sectionCardClass("yellow")}>
-                    <h3 className="mb-3 text-sm font-semibold text-[#f2c94c]">
+                              <h3
+    className="mt-2 text-[18px] font-black"
+    style={{
+      color: "#ffffff",
+      textShadow: "0 1px 10px rgba(0,0,0,0.35)",
+    }}
+  >
+    Información Básica
+  </h3>
+                    {/* <h3 className="mb-3 text-sm font-semibold text-white">
                       Información Básica
-                    </h3>
+                    </h3> */}
 
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                       <Field label={isCreative ? "Nombre completo *" : "Nombre de contacto *"}>

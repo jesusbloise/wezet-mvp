@@ -17,6 +17,7 @@ import meRoutes from "./routes/me";
 import teamRoutes from "./routes/team";
 import aiRoutes from "./routes/ai";
 import ndasRoutes from "./routes/ndas";
+import agreementsRoutes from "./routes/agreements";
 
 import { requireAuth } from "./middlewares/requireAuth";
 
@@ -109,6 +110,7 @@ app.use("/team", teamRoutes);
 app.use("/contacts", requireAuth, contactsRoutes);
 app.use("/ai", aiRoutes);
 app.use("/ndas", ndasRoutes);
+app.use("/agreements", agreementsRoutes);
 
 const port = Number(process.env.PORT) || 4000;
 app.listen(port, () => {

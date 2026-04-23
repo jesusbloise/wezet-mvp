@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 
@@ -85,6 +85,7 @@ function InfoCard({ label, value }: { label: string; value: string }) {
 export default function SharedProjectDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params?.id || "";
+  const router = useRouter();
 
   const validId = useMemo(() => isUuid(id), [id]);
 
@@ -135,15 +136,28 @@ export default function SharedProjectDetailPage() {
   }, [id, validId]);
 
   useEffect(() => {
-  if (!project?.title) return;
+    if (!project?.title) return;
 
-  const previousTitle = document.title;
-  document.title = `${project.title} | WEZET`;
+    const previousTitle = document.title;
+    document.title = `${project.title} | WEZET`;
 
-  return () => {
-    document.title = previousTitle;
-  };
-}, [project?.title]);
+    return () => {
+      document.title = previousTitle;
+    };
+  }, [project?.title]);
+
+  const canOpenNegotiation =
+    !!collaboration?.can_open_negotiation && !!collaboration?.negotiation_id;
+
+  const negotiationHref = canOpenNegotiation
+    ? `/producer/negotiations/${collaboration?.negotiation_id}`
+    : null;
+
+  useEffect(() => {
+    if (!loading && !err && negotiationHref) {
+      router.replace(negotiationHref);
+    }
+  }, [loading, err, negotiationHref, router]);
 
   if (!validId) {
     return (
@@ -170,13 +184,6 @@ export default function SharedProjectDetailPage() {
   }
 
   if (!project) return null;
-
-  const canOpenNegotiation =
-    !!collaboration?.can_open_negotiation && !!collaboration?.negotiation_id;
-
-  const negotiationHref = canOpenNegotiation
-    ? `/producer/negotiations/${collaboration?.negotiation_id}`
-    : null;
 
   return (
     <div className="w-full">
@@ -219,22 +226,14 @@ export default function SharedProjectDetailPage() {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                {negotiationHref ? (
+                {!negotiationHref ? (
                   <Link
-                    href={negotiationHref}
-                    className="inline-flex shrink-0 items-center justify-center rounded-2xl px-4 py-3 text-sm font-bold text-[#0b0f17] transition hover:opacity-95"
-                    style={{ background: "linear-gradient(135deg,#f2c94c,#d4a72c)" }}
+                    href="/projects"
+                    className="inline-flex shrink-0 items-center justify-center rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm font-bold text-slate-200 transition hover:bg-white/[0.06]"
                   >
-                    Abrir negociación
+                    Volver
                   </Link>
                 ) : null}
-
-                <Link
-                  href="/projects"
-                  className="inline-flex shrink-0 items-center justify-center rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm font-bold text-slate-200 transition hover:bg-white/[0.06]"
-                >
-                  Volver
-                </Link>
               </div>
             </div>
           </div>
@@ -260,32 +259,13 @@ export default function SharedProjectDetailPage() {
                   </div>
                 </div>
 
-                <div>
-                  <div className="font-ui text-[11px] uppercase tracking-[0.18em] text-slate-500">
-                    negociación y colaboración
-                  </div>
+                {!negotiationHref ? (
+                  <div>
+                    <div className="font-ui text-[11px] uppercase tracking-[0.18em] text-slate-500">
+                      negociación y colaboración
+                    </div>
 
-                  <div className="mt-2 rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-                    {negotiationHref ? (
-                      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="min-w-0">
-                          <div className="text-sm font-bold text-white">
-                            Ya tienes una negociación activa en este proyecto
-                          </div>
-                          <div className="mt-1 text-xs text-slate-500">
-                            Desde allí podrás conversar, enviar ofertas y responder contraofertas.
-                          </div>
-                        </div>
-
-                        <Link
-                          href={negotiationHref}
-                          className="inline-flex shrink-0 items-center justify-center rounded-2xl px-4 py-3 text-sm font-bold text-[#0b0f17] transition hover:opacity-95"
-                          style={{ background: "linear-gradient(135deg,#10b981,#34d399)" }}
-                        >
-                          Entrar al chat
-                        </Link>
-                      </div>
-                    ) : (
+                    <div className="mt-2 rounded-2xl border border-white/8 bg-white/[0.03] p-4">
                       <div>
                         <div className="text-sm font-bold text-white">
                           Aún no hay negociación disponible
@@ -294,9 +274,9 @@ export default function SharedProjectDetailPage() {
                           Cuando la negociación exista para este proyecto, aparecerá aquí.
                         </div>
                       </div>
-                    )}
+                    </div>
                   </div>
-                </div>
+                ) : null}
               </div>
 
               <div className="space-y-4">
@@ -312,10 +292,7 @@ export default function SharedProjectDetailPage() {
                   value={project.due_date ? infoValueDate(project.due_date) : "No definida"}
                 />
 
-                <InfoCard
-                  label="Estado"
-                  value={statusLabel(project.status)}
-                />
+                <InfoCard label="Estado" value={statusLabel(project.status)} />
 
                 <InfoCard
                   label="Participación"
@@ -331,9 +308,11 @@ export default function SharedProjectDetailPage() {
           </div>
         </div>
 
-        <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-5 py-4 text-xs text-slate-500">
-          Este panel ya quedó conectado con la colaboración compartida del proyecto.
-        </div>
+        {!negotiationHref ? (
+          <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-5 py-4 text-xs text-slate-500">
+            Este panel ya quedó conectado con la colaboración compartida del proyecto.
+          </div>
+        ) : null}
       </div>
     </div>
   );

@@ -76,7 +76,17 @@ export default function AssistantPage() {
           </div>
 
           <div>
-            <h1 className="text-xl font-black sm:text-2xl">Asistente WEZET</h1>
+            
+  <h1
+    className="mt-2 text-[26px] font-black"
+    style={{
+      color: "#ffffff",
+      textShadow: "0 1px 10px rgba(0,0,0,0.35)",
+    }}
+  >
+   Asistente WEZET
+  </h1>
+            {/* <h1 className="text-xl font-black sm:text-2xl">Asistente WEZET</h1> */}
             <p className="text-sm text-slate-400">
               Un apoyo rápido para proyectos, talentos, mensajes y negociaciones.
             </p>
